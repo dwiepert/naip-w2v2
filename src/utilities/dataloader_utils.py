@@ -1,12 +1,13 @@
 '''
-Sample audio Dataset format (WaveformDataset) + transformation classes
+Sample audio Dataset format (WaveformDataset) + transformation classes.
+
+Transforms from SSAST added (https://github.com/YuanGongND/ssast/tree/main/src/run.py)
 
 Author(s): Neurology AI Program (NAIP) at Mayo Clinic
 Last modified: 04/2023
 '''
 #IMPORTS
 #built-in
-import csv
 import io
 import json
 import random
@@ -25,8 +26,8 @@ from torch.utils.data import Dataset
 
 from albumentations.core.transforms_interface import DualTransform, BasicTransform
 from google.cloud import storage, bigquery
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms, utils
+from torch.utils.data import Dataset
+
 
 #local
 from albumentations.core.transforms_interface import DualTransform, BasicTransform
@@ -225,7 +226,7 @@ class Truncate(object):
             n_channels = waveform_offset.shape[0]
             n_pad = self.length - n_samples_remaining
             channel_means = waveform_offset.mean(axis = 1).unsqueeze(1)
-            waveform_trunc = torch.concat([waveform_offset, torch.ones([n_channels, n_pad])*channel_means], dim = 1)
+            waveform_trunc = torch.cat([waveform_offset, torch.ones([n_channels, n_pad])*channel_means], dim = 1)
             
         sample['waveform'] = waveform_trunc
         
