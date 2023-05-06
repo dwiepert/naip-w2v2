@@ -9,6 +9,7 @@ Email: wiepert.daniela@mayo.edu
 File: wav2vec2.py
 '''
 
+#IMPORTS
 #built-in
 import argparse
 import numpy as np
@@ -28,7 +29,7 @@ from torchvision import transforms
 from utilities.dataloader_utils import *
 from models.w2v2_models import *
 
-def load_data(args, bucket):
+def load_traintest(args, bucket):
     """
     Load the train and test data from a directory. Assumes the train and test data will exist in this directory under train.csv and test.csv
     :param args: dict with all the argument values
@@ -46,6 +47,11 @@ def load_data(args, bucket):
     diag_test = test_df[args.target_labels]
     print(len(diag_test))
     return diag_train, diag_test
+
+def load_csv(args, bucket):
+    df = pd.read_csv(args.data_split_root, index_col = 'uid')
+    diag_df = df[args.target_labels]
+    return diag_df
 
 def get_transform(args, bucket):
     """
@@ -120,16 +126,16 @@ def train_loop(args, model, dataloader_train):
 
         print('RUNNING LOSS', e, running_loss)
 
-    torch.cuda.empty_cache()
     outname = "_".join(['w2v2_mdl', args.dataset, str(args.n_class), args.optim, str(args.epochs)+'epoch'])+'.pt'
     outpath = os.path.join(args.exp_dir,outname)
     torch.save(model.state_dict(), outpath)
+
+    torch.cuda.empty_cache()
     return model
 
 def eval_loop(args, model, dataloader_eval):
     """
     Start model evaluation
-    Training loop for finetuning the w2v2 classification head. 
     :param args: dict with all the argument values
     :param model: W2V2 model
     :param dataloader_eval: dataloader object with evaluation data
@@ -212,20 +218,19 @@ def get_embeddings(args, bucket):
     """
     print('Running Embedding Extraction: ')
 
-    # (1) set up embedding model
-    model = Wav2Vec2ForEmbeddingExtraction(args.checkpoint, args.pooling_mode, args.mdl_path)
-    
-    # (2) load data to get embeddings for
+    # (1) load data to get embeddings for
     assert '.csv' in args.data_split_root, f'A csv file is necessary for embedding extraction. Please make sure this is a full file path: {args.data_split_root}'
-    annotations_df = pd.read_csv(args.data_split_root, index_col = 'uid')
-    diag_list = annotations_df.columns
+    annotations_df = load_csv(args, bucket)
 
-    # (3) get transforms
+    # (2) get transforms
     transform = get_transform(args, bucket)
     
-    # (4) set up dataloaders
-    waveform_dataset = WaveformDataset(annotations_df = annotations_df, target_labels = diag_list, transform = transform)
+    # (3) set up dataloaders
+    waveform_dataset = WaveformDataset(annotations_df = annotations_df, target_labels = args.target_labels, transform = transform)
     dataloader = DataLoader(waveform_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, collate_fn=collate_fn)
+    
+    # (4) set up embedding model
+    model = Wav2Vec2ForEmbeddingExtraction(args.checkpoint, args.pooling_mode, args.mdl_path)
     
     # (5) get embeddings
     embeddings = embedding_loop(model, dataloader)
@@ -239,16 +244,16 @@ def get_embeddings(args, bucket):
     
     return df_embed
 
-def classification(args, bucket):
+def finetuning(args, bucket):
     """
-    Run classification from start to finish
+    Run finetuning from start to finish
     :param args: dict with all the argument values
     :param bucket: google storage bucket object where data is saved
     """
-    print('Running classification: ')
+    print('Running finetuning: ')
     # (1) load data
     assert '.csv' not in args.data_split_root, f'May have given a full file path, please confirm this is a directory: {args.data_split_root}'
-    diag_train, diag_test = load_data(args, bucket)
+    diag_train, diag_test = load_traintest(args, bucket)
 
     # (2) get data transforms    
     transform = get_transform(args, bucket)
@@ -280,14 +285,14 @@ def eval_only(args, bucket):
     :param bucket: google storage bucket object where data is saved
     """
    # (1) load data
-    diag_train, diag_test = load_data(args, bucket)
+    diag_eval = load_csv(args, bucket)
 
     # (2) get data transforms    
     transform = get_transform(args, bucket)
 
     # (3) set up datasets and dataloaders
-    dataset_test = WaveformDataset(diag_test, target_labels = args.target_labels, transform = transform)
-    dataloader_test= DataLoader(dataset_test, batch_size = args.batch_size, shuffle = False, num_workers = args.num_workers, collate_fn=collate_fn)
+    dataset_eval = WaveformDataset(diag_eval, target_labels = args.target_labels, transform = transform)
+    dataloader_eval= DataLoader(dataset_eval, batch_size = args.batch_size, shuffle = False, num_workers = args.num_workers, collate_fn=collate_fn)
     #dataloader_test = DataLoader(dataset_test, batch_size = len(diag_test), shuffle = False, num_workers = args.num_workers)
 
     # (4) initialize model
@@ -299,7 +304,7 @@ def eval_only(args, bucket):
     model.load_state_dict(sd, strict=False)
 
     # (6) start evaluating
-    preds, targets = eval_loop(args, model, dataloader_test)
+    preds, targets = eval_loop(args, model, dataloader_eval)
 
     # (7) performance metrics
     metrics(args, preds, targets)
@@ -310,7 +315,7 @@ def main():
     #google cloud storage
     parser.add_argument('-i','--prefix',default='speech_ai/speech_lake/', help='Input directory or location in google cloud storage bucket containing files to load')
     parser.add_argument("-s", "--study", choices = ['r01_prelim','speech_poc_freeze_1', None], default='speech_poc_freeze_1', help="specify study name")
-    parser.add_argument("-d", "--data_split_root", default='gs://ml-e107-phi-shared-aif-us-p/speech_ai/share/data_splits/amr_subject_dedup_594_train_100_test_binarized_v20220620', help="specify file path where datasplit is located. If you give a full file path to classification, an error will be thrown. On the other hand, embedding expects a single .csv file")
+    parser.add_argument("-d", "--data_split_root", default='gs://ml-e107-phi-shared-aif-us-p/speech_ai/share/data_splits/amr_subject_dedup_594_train_100_test_binarized_v20220620', help="specify file path where datasplit is located. If you give a full file path to classification, an error will be thrown. On the other hand, evaluation and embedding expects a single .csv file.")
     parser.add_argument('-l','--label_txt', default='/Users/m144443/Documents/GitHub/mayo-w2v2/labels.txt')
     #GCS
     parser.add_argument('-b','--bucket_name', default='ml-e107-phi-shared-aif-us-p', help="google cloud storage bucket name")
@@ -326,7 +331,7 @@ def main():
     parser.add_argument("--clip_length", default=160000, type=int, help="If truncating audio, specify clip length in # of frames. 0 = no truncation")
     parser.add_argument("--trim", default=True, type=int, help="trim silence")
     #Mode specific
-    parser.add_argument("-m", "--mode", choices=['classification','eval-only','extraction'], default='classification')
+    parser.add_argument("-m", "--mode", choices=['finetune','eval-only','extraction'], default='finetune')
     parser.add_argument("-mp", "--mdl_path", default=None, help='If running eval-only or extraction, you have the option to load a fine-tuned model by specifying the save path here.')
     #Model parameters
     parser.add_argument("-c", "--checkpoint", default="facebook/wav2vec2-base-960h", help="specify path to pre-trained model weight checkpoint")
@@ -375,16 +380,14 @@ def main():
 
     # (5) run model
     print(args.mode)
-    if args.mode == "classification":
-        print('Running classification: ')
-        classification(args, bucket)
+    if args.mode == "finetune":
+        finetuning(args, bucket)
 
     elif args.mode == 'eval-only':
         eval_only(args, bucket)
               
               
     elif args.mode == "extraction":
-        print('Running Embedding Extraction: ')
         df_embed = get_embeddings(args, bucket)
     
 if __name__ == "__main__":
