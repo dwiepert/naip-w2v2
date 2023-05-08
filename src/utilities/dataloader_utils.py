@@ -33,6 +33,8 @@ from torch.utils.data import Dataset
 from albumentations.core.transforms_interface import DualTransform, BasicTransform
 
 #overrid collate function to stack images differently
+
+#overrid collate function to stack images differently
 def collate_fn(batch):
     '''
     This collate function is meant for use when initializing a dataloader - pass for the collate_fn argument.
@@ -46,7 +48,10 @@ def collate_fn(batch):
     else:
         waveform = None
     
-    fbank = torch.stack([item['fbank'] for item in batch])
+    if 'fbank' in batch[0]:
+        fbank = torch.stack([item['fbank'] for item in batch])
+    else:
+        fbank = None
     uid = [item['uid'] for item in batch]
     sr = [item['sample_rate'] for item in batch]
     targets = torch.stack([item['targets'] for item in batch])

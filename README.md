@@ -1,5 +1,8 @@
 # W2V2 for Embedding Extraction and Classification
 
+## Known Errors
+The only known error is that pandas `.to_parquet` is not working locally. Unsure if it works properly on AIF. In order to not lose embedding data, it is saved as a .csv before the error is raise. 
+
 ## Running Requirements
 In order to run this code, you must have access to a pretrained model. First, try a just a path to a huggingFace model like `facebook/wav2vec2-base-960h`. Other options can be found on [HuggingFace](https://huggingface.co/models). If this doesn't work, you can pass it a full file path to a locally saved or GCS saved checkpoint that was downloaded from [HuggingFace](https://huggingface.co/models). Checkpoints are already available in the GSC bucket at `gs://ml-e107-phi-shared-aif-us-p/m144443/checkpoints` if this option is necessary. 
 These models can just be called from their path in our GCS bucket `gs://ml-e107-phi-shared-aif-us-p/m144443/checkpoints`, or you can download one like [wav2vec2-base-960h](https://huggingface.co/facebook/wav2vec2-base-960h). The names of other options are available in the GCS checkpoints folder.

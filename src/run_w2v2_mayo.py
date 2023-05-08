@@ -144,8 +144,8 @@ def eval_loop(args, model, dataloader_eval):
     """
     print('Evaluation start')
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    outputs = np.array([])
-    t = np.array([])
+    outputs = []
+    t = []
     with torch.no_grad():
         model.eval()
         for batch in tqdm(dataloader_eval):
@@ -154,14 +154,8 @@ def eval_loop(args, model, dataloader_eval):
             targets = batch['targets']
             targets = targets.to(device)
             o = model(x)
-            targets = targets.cpu().numpy()
-            o = o.cpu().numpy()
-            if outputs.size == 0:
-                outputs = o
-                t = targets
-            else:
-                outputs = np.append(outputs, o, axis=0)
-                t = np.append(t, targets, axis=0)
+            outputs.append(o)
+            t.append(targets)
     return outputs, t
 
 def embedding_loop(model, dataloader):
@@ -227,7 +221,7 @@ def get_embeddings(args, bucket):
     
     # (3) set up dataloaders
     waveform_dataset = WaveformDataset(annotations_df = annotations_df, target_labels = args.target_labels, transform = transform)
-    dataloader = DataLoader(waveform_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, collate_fn=collate_fn)
+    dataloader = DataLoader(waveform_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
     
     # (4) set up embedding model
     model = Wav2Vec2ForEmbeddingExtraction(args.checkpoint, args.pooling_mode, args.mdl_path)
@@ -237,9 +231,13 @@ def get_embeddings(args, bucket):
         
     df_embed = pd.DataFrame([[r] for r in embeddings], columns = ['embedding'], index=annotations_df.index)
 
+    #csv outpath
+    outname = "_".join([args.dataset, 'w2v2_embeddings'])+'.csv'
+    csv_outpath = os.path.join(args.exp_dir, outname)
+    df_embed.to_csv(csv_outpath)
+
     outname = "_".join([args.dataset, 'w2v2_embeddings'])+'.pqt'
     outpath = os.path.join(args.exp_dir,outname)
-
     df_embed.to_parquet(outpath) #TODO: fix
     
     return df_embed
@@ -262,8 +260,8 @@ def finetuning(args, bucket):
     dataset_train = WaveformDataset(diag_train, target_labels = args.target_labels, transform = transform)
     dataset_test = WaveformDataset(diag_test, target_labels = args.target_labels, transform = transform)
 
-    dataloader_train = DataLoader(dataset_train, batch_size = args.batch_size, shuffle = True, num_workers = args.num_workers, collate_fn=collate_fn)
-    dataloader_test= DataLoader(dataset_test, batch_size = args.batch_size, shuffle = False, num_workers = args.num_workers, collate_fn=collate_fn)
+    dataloader_train = DataLoader(dataset_train, batch_size = args.batch_size, shuffle = True, num_workers = args.num_workers)
+    dataloader_test= DataLoader(dataset_test, batch_size = args.batch_size, shuffle = False, num_workers = args.num_workers)
     #dataloader_test = DataLoader(dataset_test, batch_size = len(diag_test), shuffle = False, num_workers = args.num_workers)
 
     # (4) initialize model
@@ -292,7 +290,7 @@ def eval_only(args, bucket):
 
     # (3) set up datasets and dataloaders
     dataset_eval = WaveformDataset(diag_eval, target_labels = args.target_labels, transform = transform)
-    dataloader_eval= DataLoader(dataset_eval, batch_size = args.batch_size, shuffle = False, num_workers = args.num_workers, collate_fn=collate_fn)
+    dataloader_eval= DataLoader(dataset_eval, batch_size = args.batch_size, shuffle = False, num_workers = args.num_workers)
     #dataloader_test = DataLoader(dataset_test, batch_size = len(diag_test), shuffle = False, num_workers = args.num_workers)
 
     # (4) initialize model
@@ -315,7 +313,7 @@ def main():
     #google cloud storage
     parser.add_argument('-i','--prefix',default='speech_ai/speech_lake/', help='Input directory or location in google cloud storage bucket containing files to load')
     parser.add_argument("-s", "--study", choices = ['r01_prelim','speech_poc_freeze_1', None], default='speech_poc_freeze_1', help="specify study name")
-    parser.add_argument("-d", "--data_split_root", default='gs://ml-e107-phi-shared-aif-us-p/speech_ai/share/data_splits/amr_subject_dedup_594_train_100_test_binarized_v20220620', help="specify file path where datasplit is located. If you give a full file path to classification, an error will be thrown. On the other hand, evaluation and embedding expects a single .csv file.")
+    parser.add_argument("-d", "--data_split_root", default='gs://ml-e107-phi-shared-aif-us-p/speech_ai/share/data_splits/amr_subject_dedup_594_train_100_test_binarized_v20220620/test.csv', help="specify file path where datasplit is located. If you give a full file path to classification, an error will be thrown. On the other hand, evaluation and embedding expects a single .csv file.")
     parser.add_argument('-l','--label_txt', default='/Users/m144443/Documents/GitHub/mayo-w2v2/labels.txt')
     #GCS
     parser.add_argument('-b','--bucket_name', default='ml-e107-phi-shared-aif-us-p', help="google cloud storage bucket name")
@@ -323,7 +321,7 @@ def main():
     #librosa vs torchaudio
     parser.add_argument('--lib', default=True, type=bool, help="Specify whether to load using librosa as compared to torch audio")
     #output
-    parser.add_argument("--dataset", default='amr_subject_dedup_594_train_test_binarized_v2022062',type=str, help="the dataset used for training")
+    parser.add_argument("--dataset", default='amr_subject_dedup_594_test_binarized_v2022062',type=str, help="the dataset used for training")
     parser.add_argument("-o", "--exp_dir", default="/Users/m144443/Documents/GitHub/mayo-w2v2/experiments")
     #Audio transforms
     parser.add_argument("--resample_rate", default=16000,type=int, help='resample rate for audio files')
@@ -331,8 +329,8 @@ def main():
     parser.add_argument("--clip_length", default=160000, type=int, help="If truncating audio, specify clip length in # of frames. 0 = no truncation")
     parser.add_argument("--trim", default=True, type=int, help="trim silence")
     #Mode specific
-    parser.add_argument("-m", "--mode", choices=['finetune','eval-only','extraction'], default='finetune')
-    parser.add_argument("-mp", "--mdl_path", default=None, help='If running eval-only or extraction, you have the option to load a fine-tuned model by specifying the save path here.')
+    parser.add_argument("-m", "--mode", choices=['finetune','eval-only','extraction'], default='extraction')
+    parser.add_argument("-mp", "--mdl_path", default='/Users/m144443/Documents/GitHub/mayo-w2v2/experiments/w2v2_mdl_amr_subject_dedup_594_train_test_binarized_v2022062_6_adam_1epoch.pt', help='If running eval-only or extraction, you have the option to load a fine-tuned model by specifying the save path here.')
     #Model parameters
     parser.add_argument("-c", "--checkpoint", default="facebook/wav2vec2-base-960h", help="specify path to pre-trained model weight checkpoint")
     parser.add_argument("-n", "--num_labels", type=int, default=6, help="specify number of features to classify")
@@ -378,7 +376,11 @@ def main():
     if not os.path.exists(args.exp_dir) and 'gs://' not in args.exp_dir:
         os.mkdir(args.exp_dir)
 
-    # (5) run model
+    # (5) check that clip length has been set
+    if args.clip_length == 0:
+        assert args.batch_size == 1, 'Not currently compatible with different length wave files unless batch size has been set to 1'
+
+    # (6) run model
     print(args.mode)
     if args.mode == "finetune":
         finetuning(args, bucket)
