@@ -146,6 +146,7 @@ def eval_loop(args, model, dataloader_eval):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     outputs = []
     t = []
+    model = model.to(device)
     with torch.no_grad():
         model.eval()
         for batch in tqdm(dataloader_eval):
