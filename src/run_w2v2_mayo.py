@@ -18,12 +18,12 @@ import pandas as pd
 
 #third-party
 import torch
+import torchvision
 from tqdm import tqdm
 
 from google.cloud import storage, bigquery
 from sklearn.metrics import roc_auc_score, roc_curve
 from torch.utils.data import  DataLoader
-from torchvision import transforms
 
 #local
 from utilities.dataloader_utils import *
@@ -81,7 +81,7 @@ def get_transform(args, bucket):
     transform_list.append(tensor_tfm)
     feature_tfm = Wav2VecFeatureExtractor(args.checkpoint)
     transform_list.append(feature_tfm)
-    transform = transforms.Compose(transform_list)
+    transform = torchvision.transforms.Compose(transform_list)
     return transform
 
 def train_loop(args, model, dataloader_train):
@@ -238,7 +238,7 @@ def get_embeddings(args, bucket):
 
     outname = "_".join([args.dataset, 'w2v2_embeddings'])+'.pqt'
     outpath = os.path.join(args.exp_dir,outname)
-    df_embed.to_parquet(outpath) #TODO: fix
+    df_embed.to_parquet(path=outpath, index=True) #TODO: fix
     
     return df_embed
 
