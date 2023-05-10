@@ -462,7 +462,7 @@ def main():
     parser.add_argument('-i','--prefix',default='speech_ai/speech_lake/', help='Input directory or location in google cloud storage bucket containing files to load')
     parser.add_argument("-s", "--study", choices = ['r01_prelim','speech_poc_freeze_1', None], default='speech_poc_freeze_1', help="specify study name")
     parser.add_argument("-d", "--data_split_root", default='gs://ml-e107-phi-shared-aif-us-p/speech_ai/share/data_splits/amr_subject_dedup_594_train_100_test_binarized_v20220620', help="specify file path where datasplit is located. If you give a full file path to classification, an error will be thrown. On the other hand, evaluation and embedding expects a single .csv file.")
-    parser.add_argument('-l','--label_txt', default='/Users/m144443/Documents/GitHub/mayo-w2v2/labels.txt')
+    parser.add_argument('-l','--label_txt', default='./labels.txt')
     parser.add_argument('--lib', default=False, type=bool, help="Specify whether to load using librosa as compared to torch audio")
     #GCS
     parser.add_argument('-b','--bucket_name', default='ml-e107-phi-shared-aif-us-p', help="google cloud storage bucket name")
@@ -471,7 +471,7 @@ def main():
     #output
     parser.add_argument("--dataset", default=None,type=str, help="When saving, the dataset arg is used to set file names. If you do not specify, it will assume the lowest directory from data_split_root")
     parser.add_argument("-o", "--exp_dir", default="./experiments", help='specify LOCAL output directory')
-    parser.add_argument('--cloud_dir', default='m144443/temp_out', type=str, help="if saving to the cloud, you can specify a specific place to save to in the CLOUD bucket")
+    parser.add_argument('--cloud_dir', default='m144443/temp_out/submit_ex', type=str, help="if saving to the cloud, you can specify a specific place to save to in the CLOUD bucket")
     #Mode specific
     parser.add_argument("-m", "--mode", choices=['finetune','eval-only','extraction'], default='finetune')
     parser.add_argument("-mp", "--mdl_path", default='gs://ml-e107-phi-shared-aif-us-p/m144443/temp_out/amr_subject_dedup_594_train_100_test_binarized_v20220620_epoch1_w2v2_mdl.pt', help='If running eval-only or extraction, you have the option to load a fine-tuned model by specifying the save path here. If passed a gs:// file, will download to local machine.')
@@ -489,7 +489,7 @@ def main():
     parser.add_argument("-e", "--epochs", type=int, default=1, help="specify number of training epochs")
     parser.add_argument("--optim", type=str, default="adam", help="training optimizer", choices=["adam"])
     parser.add_argument("--loss", type=str, default="BCE", help="the loss function for finetuning, depend on the task", choices=["MSE", "BCE"])
-    parser.add_argument("--scheduler", type=str, default="onecycle", help="specify lr scheduler", choices=["onecycle", None])
+    parser.add_argument("--scheduler", type=str, default=None, help="specify lr scheduler", choices=["onecycle", None])
     parser.add_argument("--max_lr", type=float, default=0.01, help="specify max lr for lr scheduler")
     #OTHER
     parser.add_argument("--debug", default=True, type=bool)

@@ -1,6 +1,6 @@
 # use a Google maintained base image hosted in 
 # Google's container registry
-FROM gcr.io/deeplearning-platform-release/tf2-cpu.2-0
+FROM gcr.io/deeplearning-platform-release/pytorch-gpu.1-13
 
 # package dependencies
 ARG AIF_PIP_INDEX
@@ -15,4 +15,4 @@ COPY ./src/utilities/dataloader_utils.py
 COPY labels.txt
 
 # execute the code
-ENTRYPOINT ["python", "/run.py"]
+ENTRYPOINT ["python", "/src/run.py"]

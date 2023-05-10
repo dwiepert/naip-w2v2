@@ -18,6 +18,9 @@ librosa==0.10.0.post2
 matplotlib==3.7.1
 
 #TORCH THINGS?
+torch==1.13.0
+torchvision==0.14.0
+torchaudio==0.13.0
 #torch version?
 #torchaudio version?
 #torchvision version?
