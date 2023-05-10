@@ -1,76 +1,87 @@
 # W2V2 for Embedding Extraction and Classification
+The command line usable, start-to-finish implementation of Wav2vec 2.0 is available with [run.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/run.py). A notebook tutorial version is also available at [run.ipynb](https://github.com/dwiepert/mayo-w2v2/blob/main/src/run.ipynb). 
 
-## Known Errors
-The only known error is that pandas `.to_parquet` is not working locally. Unsure if it works properly on AIF. In order to not lose embedding data, it is saved as a .csv before the error is raise. 
+This implementation contains options for finetuning a pretrained w2v2 model, evaluating a saved model, or extracting embeddings.
 
-## Running Requirements
-In order to run this code, you must have access to a pretrained model. First, try a just a path to a huggingFace model like `facebook/wav2vec2-base-960h`. Other options can be found on [HuggingFace](https://huggingface.co/models). If this doesn't work, you can pass it a full file path to a locally saved or GCS saved checkpoint that was downloaded from [HuggingFace](https://huggingface.co/models). Checkpoints are already available in the GSC bucket at `gs://ml-e107-phi-shared-aif-us-p/m144443/checkpoints` if this option is necessary. 
-These models can just be called from their path in our GCS bucket `gs://ml-e107-phi-shared-aif-us-p/m144443/checkpoints`, or you can download one like [wav2vec2-base-960h](https://huggingface.co/facebook/wav2vec2-base-960h). The names of other options are available in the GCS checkpoints folder.
+All data is loaded using the simple `WaveformDataset` class implemented in [dataloader_utils.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/utilities/dataloader_utils.py). It is initialized with a dataframe of labels, indexed by a unique identifier, along with a list of the target labels (df column names), and a transforms object with all of the transforms to perform on an audio file. When loading a sample with this class, it will output a dictionary containing the loaded waveform as a tensor (`sample['waveform']`), the target labels as a tensor (`sample['targets']`), and the unique identifier for the sample (`sample['uid']`).
 
+The transform classes are also implemented in [dataloader_utils.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/utilities/dataloader_utils.py). See the `get_transforms(...)` function in [run.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/run.py) to see the transforms used for w2v2, or explore [dataloader_utils.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/utilities/dataloader_utils.py) for other transform options.Note that when initializing transforms, you can alter the  `bucket` variable and `lib` variable. As a default, `bucket` is set to None, which will force loading from the local machine. If using GCS, pass a fully initialized bucket. Setting the `lib` value to 'True' will cause the audio to be loaded using librosa rather than torchaudio. 
+
+This implementation uses wrapper classes over the [wav2vec2 models](https://huggingface.co/docs/transformers/model_doc/wav2vec2) available from HuggingFace. The `Wav2Vec2ForSpeechClassification` is used for finetuning and evaluation (adding a classification head with a Dense layer, ReLU activation, dropout, and a final linear projection layer to an original w2v2 model). The `Wav2Vec2ForEmbeddingExtraction` is used to extract and pool the final hidden layer of a w2v2 model to serve as an embedding with 768 dims. See [w2v2_models.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/models/w2v2_models.py) for information on intialization arguments.
+
+
+## Running Environment
 The environment must include the following packages, all of which can be dowloaded with pip or conda:
-* albumentations (has not yet been tested in GCP environment)
+* albumentations
 * librosa
 * torch, torchvision, torchaudio
 * tqdm (this is essentially enumerate(dataloader) except it prints out a nice progress bar for you)
+* transformers (must be downloaded with pip)
 
-If running on your local machine and not in a GCP environement, you will also need to install:
+If running on your local machine and not in a GCP environment, you will also need to install:
 * google-cloud
 * google-cloud-storage
-* google-cloud-bigquery 
 
-If working locally and the data is stored in GCS, additionally run
+The [requirements.txt](https://github.com/dwiepert/mayo-w2v2/blob/main/requirements.txt) can be used to set up this environment. 
+
+To access data stored in GCS on your local machine, you will need to additionally run
 
 ```gcloud auth application-default login```
 
 ```gcloud auth application-defaul set-quota-project PROJECT_NAME```
 
-## dataloader_utils.py
-All helper classes and functions for creating a waveform dataset and initializing transforms. 
+## Model checkpoints
+In order to initialize a wav2vec 2.0 model, you must have access to a pretrained model checkpoint. There are a few different checkpoint options which can be found at [HuggingFace](https://huggingface.co/models). The default model used is [facebook/wav2vec2-base-960h](https://huggingface.co/facebook/wav2vec2-base-960h). These model checkpoints can be loaded in a couple different ways.
 
-## Running the Model
-All data is loaded using a WaveformDataset class, where you pass it a dataframe of the file names (UIDs) and columns with label data, a list of the target labels, and a transforms objects of all the transforms to do to the sample. Results in a dictionary of samples. Can access the waveform with sample['waveform'] and the target labels with sample['targets]. See [dataloader_utils.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/utilities/dataloader_utils.py) for more information.
+1. Use the path directly from HuggingFace. For example in the following url, `https://huggingface.co/facebook/wav2vec2-base-960h`, the checkpoint path would be `facebook/wav2vec2-base-960h`. This method only works on local machines with `transformers` installed in the environment. 
 
-When initializing transforms, you can alter the  `bucket` variable and `lib` variable. As a default, `bucket` is set to None, which will force loading from the local machine. If using GCS, pass a fully initialized bucket. Setting the `lib` value to 'True' will cause the audio to be loaded using librosa rather than torchaudio. 
+2. Use a path to a local directory where the model checkpoint is saved. All the models on hugging face can be downloaded. To properly load a model, you will need all available model files from a [HuggingFace link](https://huggingface.co/facebook/wav2vec2-base-960h)  under the `files and version` tab. 
 
-The command line usable, start-to-finish implementation of w2v2 is available with [run_w2v2_mayo.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/run_w2v2_mayo.py). We also have a notebook verision at [run_w2v2_mayo.ipynb](https://github.com/dwiepert/mayo-w2v2/blob/main/src/run_w2v2_mayo.ipynb). It contains options for fine-tuning, evaluation only, or getting embeddings
-There are many possible arguments to set, including all the parameters associated with audio configuration. The main run function describes most of these, and you can alter defaults as required. We will list some of the most important.
+3. Use a model checkpoint saved in a GCS bucket. This option can be specified by giving a full file path starting with `gs://BUCKET_NAME/...`. The code will then download this checkpoint locally and reset the checkpoint path to the path it is saved locally. 
 
-* `-i`: sets the `prefix` or input directory. Compatible with both local and GCS bucket directories containing audio files, though do not include 'gs://'
-* `-s`: optionally set the study. You can either include a full path to the study in the `prefix` arg or specify some parent directory in the `prefix` arg containing more than one study and further specify which study to select here.
-* `-d`: sets the `data_split_root` directory or a full path to a single csv file. For classification, it must be  a directory containing a train.csv and test.csv of file names. If only evaluating a model or doing an embedding extraction, it should be a csv file. This path should include 'gs://' if it is located in a bucket. 
-* `-l`: sets the `label_txt` path. This is a full file path to a .txt file contain a list of the target labels for selection (see [labels.txt](https://github.com/dwiepert/mayo-ssast/blob/main/src/labels.txt))
-* `-b`: sets the `bucket_name` for GCS loading. Required if loading from cloud.
-* `-p`: sets the `project_name` for GCS loading. Required if loading from cloud. 
-* `--lib`: specifies whether to load using librosa (True) or torchaudio (False)
-* `-o`: sets the `exp_dir`, the directory to save all outputs to. 
-* `--dataset`: specify the name of the dataset you are using - will be used for naming outputs
+## Arguments
+There are many possible arguments to set, including all the parameters associated with audio configuration. The main run function describes most of these, and you can alter defaults as required. 
+
+### Loading data
+* `-i, --prefix`: sets the `prefix` or input directory. Compatible with both local and GCS bucket directories containing audio files, though do not include 'gs://'
+* `-s, --study`: optionally set the study. You can either include a full path to the study in the `prefix` arg or specify some parent directory in the `prefix` arg containing more than one study and further specify which study to select here.
+* `-d, --data_split_root`: sets the `data_split_root` directory or a full path to a single csv file. For classification, it must be  a directory containing a train.csv and test.csv of file names. If runnning embedding extraction, it should be a csv file. Running evaluation only can accept either a directory or a csv file. This path should include 'gs://' if it is located in a bucket. 
+* `-l, --label_txt`: sets the `label_txt` path. This is a full file path to a .txt file contain a list of the target labels for selection (see [labels.txt](https://github.com/dwiepert/mayo-ssast/blob/main/labels.txt))
+* `--lib`: : specifies whether to load using librosa (True) or torchaudio (False), default=False
+
+### Google cloud storage
+* `-b, --bucket_name`: sets the `bucket_name` for GCS loading. Required if loading from cloud.
+* `-p, --project_name`: sets the `project_name` for GCS loading. Required if loading from cloud. 
+* `--cloud`: this specifies whether to save everything to GCS bucket. It is set as True as default.
+
+### Saving data
+* `--dataset`: Specify the name of the dataset you are using. When saving, the dataset arg is used to set file names. If you do not specify, it will assume the lowest directory from data_split_root. Default is None. 
+* `-o, --exp_dir`: sets the `exp_dir`, the LOCAL directory to save all outputs to. 
+* `--cloud_dir`: if saving to the cloud, you can specify a specific place to save to in the CLOUD bucket. Do not include the bucket_name or 'gs://' in this path.
+
+### Run mode
+* `-m, --mode`: Specify the mode you are running, i.e., whether to run fine-tuning for classification ('finetune'), evaluation only ('eval-only'), or embedding extraction ('extraction'). Default is 'finetune'.
+* `-mp, --mdl_path`: if running eval-only or extraction, you can specify a fine-tuned model to load in. This can either be a local path of a 'gs://' path, that latter of which will trigger the code to download the specified model path to the local machine. 
+
+### Audio transforms
 * `--resample_rate`: an integer value for resampling. Default to 16000
 * `--reduce`: a boolean indicating whether to reduce audio to monochannel. Default to True.
-* `--clip_length`: integer specifying how many frames the audio should be. Default to 160000
+* `--clip_length`: integer specifying how many frames the audio should be. Default to 160000.
 * `--trim`: boolean indicating whether to trim silence. Default to False.
-* `--mode`: Specify the mode you are running, i.e., whether to run fine-tuning for classification ('finetune'), evaluation only ('eval-only'), or embedding extraction ('extraction'). Default is 'finetune'.
-* `--mdl_path`: if running eval-only or extraction, you can specify a fine-tuned model to load in.
-* `--batch_size`: set the batch size (default 8)
-* `--num_workers`: set number of workers for dataloader (default 0)
-* `--epochs`: set number of training epochs (default 1)
-* `-c`: specify a pretrained model checkpoint - this is a base model from w2v2, as mentioned earlier. Default is 'facebook/wav2vec2-base-960h' which is a base model trained on 960h of Librispeech. This is required regardless of whether you include a fine-tuned model path. 
-* `-pm`: specify method of pooling the last hidden layer for embedding extraction. Options are 'mean', 'sum', 'max'.
-* `-lr`: you can manually change the learning rate (default 0.0003)
 
-Please note that there are a few different model classes depending on task. Please see [w2v2_models.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/models/w2v2_models.py) for more information.
+### Model parameters
+* `-c, --checkpoint`: specify a pretrained model checkpoint - this is a base model from w2v2, as mentioned earlier. Default is 'facebook/wav2vec2-base-960h' which is a base model trained on 960h of Librispeech. This is required regardless of whether you include a fine-tuned model path. 
+* `-pm, --pooling_mode`: specify method of pooling the last hidden layer for embedding extraction. Options are 'mean', 'sum', 'max'.
+* `-bs, --batch_size`: set the batch size (default 8)
+* `-nw, --num_workers`: set number of workers for dataloader (default 0)
+* `-lr, --learning_rate`: you can manually change the learning rate (default 0.0003)
+* `-e, --epochs`: set number of training epochs (default 1)
+* `--optim`: specify the training optimizer. Default is `adam`.
+* `--loss`: specify the loss function. Can be 'BCE' or 'MSE'. Default is 'BCE'.
+* `--scheduler`: specify a lr scheduler. If None, no lr scheduler will be use. The only scheduler option is 'onecycle', which initializes `torch.optim.lr_scheduler.OneCycleLR`
+* `--max_lr`: specify the max learning rate for an lr scheduler. Default is 0.01.
 
-### Finetuning
-If running finetuning, we use the following architecture and parameters:
-* MSE Loss
-* Adam Optimizer
-* Classficiation head with a dense layer, ReLU, dropout, and a final linear layer
-
-### Evaluation
-Evaluation metrics will be AUCs
-
-### Embedding extraction
-Take the last hidden layer of the w2v2 model and pool it to get one embedding vector that is hidden_state_dim length. A specific model version is used so that the model output is the embedding rather than predictions. 
-
+For more information on arguments, you can also run `python run.py -h`. 
 
 
 
