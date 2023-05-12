@@ -1,16 +1,19 @@
 '''
 Sample audio Dataset format (WaveformDataset) + transformation classes.
+Classification head
 
 Transforms from SSAST added (https://github.com/YuanGongND/ssast/tree/main/src/run.py)
 
 Author(s): Neurology AI Program (NAIP) at Mayo Clinic
-Last modified: 04/2023
+Last modified: 05/2023
 '''
 #IMPORTS
 #built-in
 import io
 import json
 import random
+
+from collections import OrderedDict
 
 #third party
 import albumentations
@@ -20,6 +23,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
+import torch.nn as nn
 import torchaudio
 import torch.nn.functional
 from torch.utils.data import Dataset
@@ -32,7 +36,61 @@ from torch.utils.data import Dataset
 #local
 from albumentations.core.transforms_interface import DualTransform, BasicTransform
 
-#overrid collate function to stack images differently
+class ClassificationHead(nn.Module):
+    """
+        Head for classification task. 
+        Initialize classification head with input sizes
+        Source: https://colab.research.google.com/github/m3hrdadfi/soxan/blob/main/notebooks/Eating_Sound_Collection_using_Wav2Vec2.ipynb#scrollTo=Fv62ShDsH5DZ
+    """
+
+    def __init__(self, input_size, output_size, activation='relu',final_dropout=0.2, layernorm=False ):
+        """
+        Create a classification head with a dense layer, relu activation, a dropout layer, and final classification layer
+        :param hiden_size: size of input to classification head - equivalent to the last hidden layer size in the Wav2Vec 2.0 model (int)
+        :param final_dropout: specify amount of dropout
+        :param num_labels: specify number of categories to classify
+        """
+        super().__init__()
+        self.input_size = input_size
+        self.output_size = output_size
+        self.activation = activation
+        self.layernorm = layernorm
+        self.final_dropout = final_dropout
+
+        self.norm = nn.LayerNorm(self.input_size)
+        self.dense = nn.Linear(self.input_size, self.input_size) 
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(self.final_dropout)
+        self.out_proj = nn.Linear(self.input_size, self.output_size)
+
+        classifier = []
+        key = []
+        if self.layernorm:
+            classifier.append(self.norm)
+            key.append('norm')
+        classifier.append(self.dense)
+        key.append('dense')
+        if self.activation == 'relu':
+            classifier.append(self.relu)
+            key.append('relu')
+        classifier.append(self.dropout)
+        key.append('dropout')
+        classifier.append(self.out_proj)
+        key.append('outproj')
+
+        seq = []
+        for i in range(len(classifier)):
+            seq.append((key[i],classifier[i]))
+        
+        self.head = nn.Sequential(OrderedDict(seq))
+
+    def forward(self, x, **kwargs):
+        """
+        Run input (features) through the classifier
+        :param features: input 
+        :return x: classifier output
+        """
+        return self.head(x)
 
 #overrid collate function to stack images differently
 def collate_fn(batch):

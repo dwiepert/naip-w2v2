@@ -1,4 +1,3 @@
-
 '''
 W2V2 run function
 Performs fine-tuning of a classification head, evaluation, or embedding extraction. 
@@ -29,8 +28,48 @@ from sklearn.metrics import roc_auc_score, roc_curve
 from torch.utils.data import  DataLoader
 
 #local
-from utilities.dataloader_utils import *
-from models.w2v2_models import *
+from utilities import *
+from models import *
+
+def load_args(args):
+    # assumes that the model is saved in the same folder as an args.pkl file 
+    folder = os.path.basename(os.path.dirname(args.finetuned_mdl_path))
+    if os.path.exists(os.path.join(folder, 'model_args.pkl')):
+        with open(os.path.join(folder, 'model_args.pkl'), 'rb') as f:
+            model_args = pickle.load(f)
+    elif os.path.exists(os.path.join(folder, 'args.pkl')):
+        with open(os.path.join(folder, 'args.pkl'), 'rb') as f:
+            model_args = pickle.load(f)
+    else:
+        model_args = args
+    
+    return model_args
+
+def setup_mdl(args):
+    if args.finetuned_mdl_path is None:
+        model_args = args
+    else:
+        if args.finetuned_mdl_path[:5] =='gs://':
+                mdl_path = args.finetuned_mdl_path[5:].replace(args.bucket_name,'')[1:]
+                args.finetuned_mdl_path = download_model(mdl_path, args.exp_dir, args.bucket)
+        
+        model_args = load_args(args)
+
+        if model_args.checkpoint[:5] =='gs://':
+            checkpoint = model_args.checkpoint[5:].replace(model_args.bucket_name,'')[1:]
+            if model_args.bucket_name != args.bucket_name:
+                if args.bucket_name is not None:
+                    storage_client = storage.Client(project=model_args.project_name)
+                    bucket = storage_client.bucket(model_args.bucket_name)
+                else:
+                    bucket = None
+
+                checkpoint = download_checkpoint(checkpoint, bucket)
+            else:
+                checkpoint = download_checkpoint(checkpoint, args.bucket)
+            model_args.checkpoint = checkpoint
+    return model_args
+
 
 def download_checkpoint(checkpoint, bucket):
     print('Downloading checkpoint')
@@ -45,13 +84,23 @@ def download_checkpoint(checkpoint, bucket):
             blob.download_to_filename(destination_uri)
     return folder
 
-def download(gcs_path,outpath, bucket):
-    file = os.path.basename(gcs_path)
-    blob = bucket.blob(gcs_path)
-    destination_uri = '{}/{}'.format(outpath, file)
-    if not os.path.exists(destination_uri):
-        blob.download_to_filename(destination_uri)
-    return destination_uri
+def download_model(gcs_path,outpath, bucket):
+    dir_path = os.path.dirname(gcs_path)
+    bn = os.path.basename(gcs_path)
+    blobs = bucket.list_blobs(prefix=dir_path)
+    mdl_path = ''
+    for blob in blobs:
+        blob_bn = os.path.basename(blob.name)
+        if blob_bn == bn:
+            destination_uri = '{}/{}'.format(outpath, blob_bn)
+            mdl_path = destination_uri
+        elif blob_bn == 'args.pkl':
+            destination_uri = '{}/model_args.pkl'.format(outpath)
+        if not os.path.exists(destination_uri):
+            blob.download_to_filename(destination_uri)
+   
+    return mdl_path
+
 
 def upload(gcs_prefix, path, bucket):
     assert bucket is not None, 'no bucket given for uploading'
@@ -60,8 +109,7 @@ def upload(gcs_prefix, path, bucket):
     blob = bucket.blob(os.path.join(gcs_prefix, os.path.basename(path)))
     blob.upload_from_filename(path)
 
-
-def load_traintest(args):
+def load_data(args):
     """
     Load the train and test data from a directory. Assumes the train and test data will exist in this directory under train.csv and test.csv
     :param args: dict with all the argument values
@@ -84,11 +132,7 @@ def load_traintest(args):
     if args.cloud:
         upload(args.cloud_dir, val_path, args.bucket)
 
-    #get min number of columns containing all the target label columns
-    diag_train = train_df[args.target_labels]
-    diag_test = test_df[args.target_labels]
-    diag_val = val_df[args.target_labels]
-    return diag_train, diag_val, diag_test
+    return train_df, val_df, test_df
 
 def get_transform(args):
     """
@@ -143,7 +187,7 @@ def train_loop(args, model, dataloader_train, dataloader_val=None):
     #optimizer
     if args.optim == 'adam':
         optim = torch.optim.Adam([p for p in model.parameters() if p.requires_grad],lr=args.learning_rate)
-    if args.optim == 'adamw':
+    elif args.optim == 'adamw':
          optim = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=args.learning_rate)
     else:
         raise ValueError('adam must be given for optimizer parameter')
@@ -207,7 +251,7 @@ def train_loop(args, model, dataloader_train, dataloader_val=None):
                 json.dump(json_string, outfile)
             
             #SAVE CURRENT MODEL
-            mdl_path = os.path.join(args.exp_dir, 'w2v2_mdl_epoch{}.pt'.format(e))
+            mdl_path = os.path.join(args.exp_dir, 'finetuned_{}_epoch{}.pt'.format(os.path.basename(args.checkpoint),e))
             torch.save(model.state_dict(), mdl_path)
             
             if args.cloud:
@@ -216,7 +260,7 @@ def train_loop(args, model, dataloader_train, dataloader_val=None):
                 upload(args.cloud_dir, mdl_path, args.bucket)
 
     print('Training finished')
-    mdl_path = os.path.join(args.exp_dir, '{}_{}_{}_epoch{}_w2v2_mdl.pt'.format(args.dataset, args.n_class, args.optim, args.epochs))
+    mdl_path = os.path.join(args.exp_dir, '{}_{}_{}_epoch{}_{}_mdl.pt'.format(args.dataset, args.n_class, args.optim,os.path.basename(args.checkpoint), args.epochs))
     torch.save(model.state_dict(), mdl_path)
 
     if args.cloud:
@@ -269,8 +313,8 @@ def eval_loop(args, model, dataloader_eval):
     outputs = torch.cat(outputs).cpu().detach()
     t = torch.cat(t).cpu().detach()
     # SAVE PREDICTIONS AND TARGETS 
-    pred_path = os.path.join(args.exp_dir, 'w2v2_eval_predictions.pt')
-    target_path = os.path.join(args.exp_dir, 'w2v2_eval_targets.pt')
+    pred_path = os.path.join(args.exp_dir, 'predictions.pt')
+    target_path = os.path.join(args.exp_dir, 'targets.pt')
     torch.save(outputs, pred_path)
     torch.save(t, target_path)
 
@@ -280,7 +324,7 @@ def eval_loop(args, model, dataloader_eval):
 
     return outputs, t
 
-def embedding_loop(model, dataloader):
+def embedding_loop(model, dataloader,embedding_type='ft'):
     """
     Run a specific subtype of evaluation for getting embeddings.
     :param args: dict with all the argument values
@@ -300,7 +344,7 @@ def embedding_loop(model, dataloader):
         for batch in tqdm(dataloader):
             x = torch.squeeze(batch['waveform'], dim=1)
             x = x.to(device)
-            e = model(x)
+            e = model.extract_embeddings(x, embedding_type)
             e = e.cpu().numpy()
             if embeddings.size == 0:
                 embeddings = e
@@ -334,11 +378,12 @@ def get_embeddings(args):
     :param bucket: google storage bucket object where data is saved
     """
     print('Running Embedding Extraction: ')
+    # Get original 
+    model_args = setup_mdl(args)
 
     # (1) load data to get embeddings for
     assert '.csv' in args.data_split_root, f'A csv file is necessary for embedding extraction. Please make sure this is a full file path: {args.data_split_root}'
-    df = pd.read_csv(args.data_split_root, index_col = 'uid')
-    annotations_df = df[args.target_labels]
+    annotations_df = pd.read_csv(args.data_split_root, index_col = 'uid') #data_split_root should use the CURRENT arguments regardless of the finetuned model
 
     if args.debug:
         annotations_df = annotations_df.iloc[0:8,:]
@@ -347,29 +392,37 @@ def get_embeddings(args):
     transform = get_transform(args)
     
     # (3) set up dataloaders
-    waveform_dataset = WaveformDataset(annotations_df = annotations_df, target_labels = args.target_labels, transform = transform)
+    waveform_dataset = WaveformDataset(annotations_df = annotations_df, target_labels = model_args.target_labels, transform = transform) #not super important for embeddings, but the dataset should be selecting targets based on the FINETUNED model
     dataloader = DataLoader(waveform_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
     
     # (4) set up embedding model
-    if args.mdl_path[:5] =='gs://':
-        mdl_path = args.mdl_path[5:].replace(args.bucket_name,'')[1:]
-        args.mdl_path = download(mdl_path, args.exp_dir, args.bucket)
-    model = Wav2Vec2ForEmbeddingExtraction(args.checkpoint, args.pooling_mode, args.mdl_path)
+    model = Wav2Vec2ForSpeechClassification(model_args.checkpoint, model_args.pooling_mode, model_args.n_class,args.freeze) #should look like the finetuned model (so using model_args). If pretrained model, will resort to current args
     
+    if args.finetuned_mdl_path is not None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        sd = torch.load(args.finetuned_mdl_path, map_location=device)
+        model.load_state_dict(sd, strict=False)
+
     # (5) get embeddings
-    embeddings = embedding_loop(model, dataloader)
+    embeddings = embedding_loop(model, dataloader, args.embedding_task)
         
     df_embed = pd.DataFrame([[r] for r in embeddings], columns = ['embedding'], index=annotations_df.index)
 
     try:
-        pqt_path = '{}/{}_w2v2_embeddings.pqt'.format(args.exp_dir, args.dataset)
+        if args.finetuned_mdl_path is not None:
+            pqt_path = '{}/{}_{}_{}_embeddings.pqt'.format(args.exp_dir, args.dataset, os.path.basename(args.finetuned_mdl_path)[:-3], args.embedding_type)
+        else:
+            pqt_path = '{}/{}_{}_{}_embeddings.pqt'.format(args.exp_dir, args.dataset, os.path.basename(args.checkpoint), args.embedding_type)
         df_embed.to_parquet(path=pqt_path, index=True, engine='pyarrow') #TODO: fix
 
         if args.cloud:
             upload(args.cloud_dir, pqt_path, args.bucket)
     except:
         print('Unable to save as pqt, saving instead as csv')
-        csv_path = '{}/{}_w2v2_embeddings.csv'.format(args.exp_dir, args.dataset)
+        if args.finetuned_mdl_path is not None:
+            csv_path = '{}/{}_{}_{}_embeddings.csv'.format(args.exp_dir, args.dataset, os.path.basename(args.finetuned_mdl_path)[:-3], args.embedding_type)
+        else:
+            csv_path = '{}/{}_{}_{}_embeddings.csv'.format(args.exp_dir, args.dataset, os.path.basename(args.checkpoint), args.embedding_type)
         df_embed.to_csv(csv_path, index=True)
 
         if args.cloud:
@@ -385,7 +438,7 @@ def finetuning(args):
     print('Running finetuning: ')
     # (1) load data
     assert '.csv' not in args.data_split_root, f'May have given a full file path, please confirm this is a directory: {args.data_split_root}'
-    diag_train, diag_val, diag_test = load_traintest(args)
+    diag_train, diag_val, diag_test = load_data(args)
 
     if args.debug:
         diag_train = diag_train.iloc[0:8,:]
@@ -406,7 +459,7 @@ def finetuning(args):
     #dataloader_test = DataLoader(dataset_test, batch_size = len(diag_test), shuffle = False, num_workers = args.num_workers)
 
     # (4) initialize model
-    model = Wav2Vec2ForSpeechClassification(args.checkpoint, args.pooling_mode, args.n_class)
+    model = Wav2Vec2ForSpeechClassification(args.checkpoint, args.pooling_mode, args.n_class, args.freeze)
     
     # (5) start fine-tuning classification
     model = train_loop(args, model, dataloader_train, dataloader_val)
@@ -422,12 +475,14 @@ def eval_only(args):
     Run only evaluation of a pre-existing model
     :param args: dict with all the argument values
     """
+    # get original model args (or if no finetuned model, uses your original args)
+    model_args = setup_mdl(args)
+    
    # (1) load data
     if '.csv' in args.data_split_root: 
-        df = pd.read_csv(args.data_split_root, index_col = 'uid')
-        diag_eval = df[args.target_labels]
+        eval_df = pd.read_csv(args.data_split_root, index_col = 'uid')
     else:
-        diag_train, diag_val, diag_eval = load_traintest(args)
+        train_df, val_df, eval_df = load_data(args)
     
     if args.debug:
         diag_eval = diag_eval.iloc[0:8,:]
@@ -436,20 +491,17 @@ def eval_only(args):
     transform = get_transform(args)
 
     # (3) set up datasets and dataloaders
-    dataset_eval = WaveformDataset(diag_eval, target_labels = args.target_labels, transform = transform)
+    dataset_eval = WaveformDataset(eval_df, target_labels = model_args.target_labels, transform = transform)  #the dataset should be selecting targets based on the FINETUNED model, so if there is a mismatch, it defaults to the arguments used for finetuning
     dataloader_eval= DataLoader(dataset_eval, batch_size = args.batch_size, shuffle = False, num_workers = args.num_workers)
     #dataloader_test = DataLoader(dataset_test, batch_size = len(diag_test), shuffle = False, num_workers = args.num_workers)
 
     # (4) initialize model
-    model = Wav2Vec2ForSpeechClassification(args.checkpoint, args.pooling_mode, args.n_class)
+    model = Wav2Vec2ForSpeechClassification(model_args.checkpoint, model_args.pooling_mode, model_args.n_class, args.freeze)
 
-    # (5) load fine-tuned model
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if args.mdl_path[:5] =='gs://':
-        mdl_path = args.mdl_path[5:].replace(args.bucket_name,'')[1:]
-        args.mdl_path = download(mdl_path, args.exp_dir, args.bucket)
-    sd = torch.load(args.mdl_path, map_location=device)
-    model.load_state_dict(sd, strict=False)
+    if args.finetuned_mdl_path is not None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        sd = torch.load(args.finetuned_mdl_path, map_location=device)
+        model.load_state_dict(sd, strict=False)
 
     # (6) start evaluating
     preds, targets = eval_loop(args, model, dataloader_eval)
@@ -475,14 +527,16 @@ def main():
     parser.add_argument('--cloud_dir', default='m144443/temp_out/submit_ex', type=str, help="if saving to the cloud, you can specify a specific place to save to in the CLOUD bucket")
     #Mode specific
     parser.add_argument("-m", "--mode", choices=['finetune','eval-only','extraction'], default='finetune')
-    parser.add_argument("-mp", "--mdl_path", default='gs://ml-e107-phi-shared-aif-us-p/m144443/temp_out/amr_subject_dedup_594_train_100_test_binarized_v20220620_epoch1_w2v2_mdl.pt', help='If running eval-only or extraction, you have the option to load a fine-tuned model by specifying the save path here. If passed a gs:// file, will download to local machine.')
+    parser.add_argument("--freeze", type=bool, default=True, help='specify whether to freeze the base model')
+    parser.add_argument("-c", "--checkpoint", default="gs://ml-e107-phi-shared-aif-us-p/m144443/checkpoints/wav2vec2-base-960h", help="specify path to pre-trained model weight checkpoint")
+    parser.add_argument("-mp", "--finetuned_mdl_path", default=None, help='If running eval-only or extraction, you have the option to load a fine-tuned model by specifying the save path here. If passed a gs:// file, will download to local machine.')
+    parser.add_argument('--embedding_type', type=str, default='ft', help='specify whether embeddings should be extracted from classification head (ft) or base pretrained model (pt)', choices=['ft','pt'])
     #Audio transforms
     parser.add_argument("--resample_rate", default=16000,type=int, help='resample rate for audio files')
     parser.add_argument("--reduce", default=True, type=bool, help="Specify whether to reduce to monochannel")
     parser.add_argument("--clip_length", default=160000, type=int, help="If truncating audio, specify clip length in # of frames. 0 = no truncation")
     parser.add_argument("--trim", default=True, type=int, help="trim silence")
     #Model parameters
-    parser.add_argument("-c", "--checkpoint", default="gs://ml-e107-phi-shared-aif-us-p/m144443/checkpoints/wav2vec2-base-960h", help="specify path to pre-trained model weight checkpoint")
     parser.add_argument("-pm", "--pooling_mode", default="mean", help="specify method of pooling last hidden layer", choices=['mean','sum','max'])
     parser.add_argument("-bs", "--batch_size", type=int, default=8, help="specify batch size")
     parser.add_argument("-nw", "--num_workers", type=int, default=0, help="specify number of parallel jobs to run for data loader")
