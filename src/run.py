@@ -13,16 +13,16 @@ File: run.py
 #built-in
 import argparse
 import json
-import numpy as np
 import os
-import pandas as pd
 import pickle
-import pyarrow
 
 #third-party
+import numpy as np
 import torch
 import torchvision
 from tqdm import tqdm
+import pandas as pd
+import pyarrow
 
 from google.cloud import storage, bigquery
 from sklearn.metrics import roc_auc_score, roc_curve
@@ -90,7 +90,6 @@ def load_traintest(args):
     diag_val = val_df[args.target_labels]
     return diag_train, diag_val, diag_test
 
-
 def get_transform(args):
     """
     Set up pre-processing transform for raw samples 
@@ -144,6 +143,8 @@ def train_loop(args, model, dataloader_train, dataloader_val=None):
     #optimizer
     if args.optim == 'adam':
         optim = torch.optim.Adam([p for p in model.parameters() if p.requires_grad],lr=args.learning_rate)
+    if args.optim == 'adamw':
+         optim = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=args.learning_rate)
     else:
         raise ValueError('adam must be given for optimizer parameter')
     
@@ -215,7 +216,7 @@ def train_loop(args, model, dataloader_train, dataloader_val=None):
                 upload(args.cloud_dir, mdl_path, args.bucket)
 
     print('Training finished')
-    mdl_path = os.path.join(args.exp_dir, '{}_epoch{}_w2v2_mdl.pt'.format(args.dataset,args.epochs))
+    mdl_path = os.path.join(args.exp_dir, '{}_{}_{}_epoch{}_w2v2_mdl.pt'.format(args.dataset, args.n_class, args.optim, args.epochs))
     torch.save(model.state_dict(), mdl_path)
 
     if args.cloud:
@@ -268,8 +269,8 @@ def eval_loop(args, model, dataloader_eval):
     outputs = torch.cat(outputs).cpu().detach()
     t = torch.cat(t).cpu().detach()
     # SAVE PREDICTIONS AND TARGETS 
-    pred_path = os.path.join(args.exp_dir, 'eval_predictions.pt')
-    target_path = os.path.join(args.exp_dir, 'eval_targets.pt')
+    pred_path = os.path.join(args.exp_dir, 'w2v2_eval_predictions.pt')
+    target_path = os.path.join(args.exp_dir, 'w2v2_eval_targets.pt')
     torch.save(outputs, pred_path)
     torch.save(t, target_path)
 
@@ -414,7 +415,7 @@ def finetuning(args):
     preds, targets = eval_loop(args, model, dataloader_test)
 
     # (7) performance metrics
-    metrics(args, preds, targets)
+    #metrics(args, preds, targets)
 
 def eval_only(args):
     """
@@ -454,7 +455,7 @@ def eval_only(args):
     preds, targets = eval_loop(args, model, dataloader_eval)
 
     # (7) performance metrics
-    metrics(args, preds, targets)
+    #metrics(args, preds, targets)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -554,7 +555,6 @@ def main():
 
     #(9) add bucket to args
     args.bucket = bucket
-
 
     # (10) run model
     print(args.mode)

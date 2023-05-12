@@ -5,14 +5,14 @@ FROM gcr.io/deeplearning-platform-release/pytorch-gpu.1-13
 # package dependencies
 ARG AIF_PIP_INDEX
 RUN pip install -i $AIF_PIP_INDEX --upgrade pip
-COPY requirements.txt
+COPY requirements.txt .
 RUN pip install -i $AIF_PIP_INDEX -r requirements.txt
 
 # copy all necessary code
-COPY ./src/run.py
-COPY ./src/models/w2v2_models.py
-COPY ./src/utilities/dataloader_utils.py
-COPY labels.txt
+COPY ./src/run.py /
+COPY ./src/models/w2v2_models.py /
+COPY ./src/utilities/dataloader_utils.py /
+COPY labels.txt /
 
 # execute the code
 ENTRYPOINT ["python", "/src/run.py"]
