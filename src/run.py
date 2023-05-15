@@ -124,6 +124,8 @@ def setup_mdl_args(args):
     '''
     Get model args used during finetuning of the specified model
     :param args: dict with all the argument values
+    :return model_args: dict with all the argument values from the finetuned model
+    :return finetuned_mdl_path: updated finetuned_mdl_path (in case it needed to be downloaded from gcs)
     '''
     #if running a pretrained model only, use the args from this run
     if args.finetuned_mdl_path is None:
@@ -153,10 +155,9 @@ def setup_mdl_args(args):
                 checkpoint = download_dir(checkpoint, args.bucket) #download with the current bucket
             model_args.checkpoint = checkpoint #reset the checkpoint path
         else: #load in from local machine, just need to check that the path exists
-            assert os.path.exists(model_args.checkpoint), 'Current checkpoint does not exist on local machine'
+            assert os.path.exists(model_args.checkpoint), f'Current checkpoint does not exist on local machine: {model_args.checkpoint}'
 
-    return model_args
-
+    return model_args, args.finetuned_mdl_path
 
 def load_data(args):
     """
@@ -435,7 +436,7 @@ def get_embeddings(args):
     """
     print('Running Embedding Extraction: ')
     # Get original 
-    model_args = setup_mdl_args(args)
+    model_args, args.finetuned_mdl_path = setup_mdl_args(args)
 
     # (1) load data to get embeddings for
     assert '.csv' in args.data_split_root, f'A csv file is necessary for embedding extraction. Please make sure this is a full file path: {args.data_split_root}'
@@ -458,6 +459,9 @@ def get_embeddings(args):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         sd = torch.load(args.finetuned_mdl_path, map_location=device)
         model.load_state_dict(sd, strict=False)
+    else:
+        print(f'Extracting embeddings from only a pretrained model: {args.pretrained_mdl_path}. Extraction method changed to pt.')
+        args.embedding_type = 'pt' #manually change the type to 'pt' if not given a finetuned mdl path.
 
     # (5) get embeddings
     embeddings = embedding_loop(model, dataloader, args.embedding_type)
@@ -477,6 +481,7 @@ def get_embeddings(args):
     except:
         print('Unable to save as pqt, saving instead as csv')
         if args.finetuned_mdl_path is not None:
+            args.finetuned_mdl_path = args.finetuned_mdl_path.replace(os.path.commonprefix([args.dataset, os.path.basename(args.finetuned_mdl_path)]), '')
             csv_path = '{}/{}_{}_{}_embeddings.csv'.format(args.exp_dir, args.dataset, os.path.basename(args.finetuned_mdl_path)[:-3], args.embedding_type)
         else:
             csv_path = '{}/{}_{}_{}_embeddings.csv'.format(args.exp_dir, args.dataset, os.path.basename(args.checkpoint), args.embedding_type)
@@ -536,7 +541,7 @@ def eval_only(args):
     :param args: dict with all the argument values
     """
     # get original model args (or if no finetuned model, uses your original args)
-    model_args = setup_mdl_args(args)
+    model_args, args.finetuned_mdl_path = setup_mdl_args(args)
     
    # (1) load data
     if '.csv' in args.data_split_root: 
@@ -562,6 +567,8 @@ def eval_only(args):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         sd = torch.load(args.finetuned_mdl_path, map_location=device)
         model.load_state_dict(sd, strict=False)
+    else:
+        print(f'Evaluating only a pretrained model: {args.pretrained_mdl_path}')
 
     # (6) start evaluating
     preds, targets = eval_loop(args, model, dataloader_eval)
