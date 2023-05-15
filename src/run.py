@@ -31,53 +31,22 @@ from torch.utils.data import  DataLoader
 from utilities import *
 from models import *
 
-def load_args(args):
-    # assumes that the model is saved in the same folder as an args.pkl file 
-    folder = os.path.basename(os.path.dirname(args.finetuned_mdl_path))
-    if os.path.exists(os.path.join(folder, 'model_args.pkl')):
-        with open(os.path.join(folder, 'model_args.pkl'), 'rb') as f:
-            model_args = pickle.load(f)
-    elif os.path.exists(os.path.join(folder, 'args.pkl')):
-        with open(os.path.join(folder, 'args.pkl'), 'rb') as f:
-            model_args = pickle.load(f)
-    else:
-        model_args = args
-    
-    return model_args
-
-def setup_mdl(args):
-    if args.finetuned_mdl_path is None:
-        model_args = args
-    else:
-        if args.finetuned_mdl_path[:5] =='gs://':
-                mdl_path = args.finetuned_mdl_path[5:].replace(args.bucket_name,'')[1:]
-                args.finetuned_mdl_path = download_model(mdl_path, args.exp_dir, args.bucket)
-        
-        model_args = load_args(args)
-
-        if model_args.checkpoint[:5] =='gs://':
-            checkpoint = model_args.checkpoint[5:].replace(model_args.bucket_name,'')[1:]
-            if model_args.bucket_name != args.bucket_name:
-                if args.bucket_name is not None:
-                    storage_client = storage.Client(project=model_args.project_name)
-                    bucket = storage_client.bucket(model_args.bucket_name)
-                else:
-                    bucket = None
-
-                checkpoint = download_checkpoint(checkpoint, bucket)
-            else:
-                checkpoint = download_checkpoint(checkpoint, args.bucket)
-            model_args.checkpoint = checkpoint
-    return model_args
-
-
-def download_checkpoint(checkpoint, bucket):
-    print('Downloading checkpoint')
-    folder = os.path.basename(checkpoint)
+#GCS Helper functions
+def download_dir(gcs_dir, bucket):
+    '''
+    Download a directory from google cloud storage bucket.
+    Inputs:
+    :param gcs_dir: directory path in the bucket (no gs://project-name in the path)
+    :param bucket: initialized GCS bucket object
+    Outputs:
+    :return folder: a string path to the local directory with the downloaded files
+    '''
+    print('Downloading directory')
+    folder = os.path.basename(gcs_dir)
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-    blobs = bucket.list_blobs(prefix=checkpoint)
+    blobs = bucket.list_blobs(prefix=gcs_dir)
     for blob in blobs:
         destination_uri = '{}/{}'.format(folder, os.path.basename(blob.name))
         if not os.path.exists(destination_uri):
@@ -85,6 +54,19 @@ def download_checkpoint(checkpoint, bucket):
     return folder
 
 def download_model(gcs_path,outpath, bucket):
+    '''
+    Download a model from google cloud storage and the args.pkl file located in the same folder(if it exists)
+
+    Inputs:
+    :param gcs_path: full file path in the bucket to a pytorch model(no gs://project-name in the path)
+    :param outpath: string path to directory where you want the model to be stored
+    :param bucket: initialized GCS bucket object
+    Outputs:
+    :return mdl_path: a string path to the local version of the finetuned model (args.pkl will be in the same folder as this model)
+    '''
+    if not os.path.exists(outpath):
+        os.makedirs(outpath)
+
     dir_path = os.path.dirname(gcs_path)
     bn = os.path.basename(gcs_path)
     blobs = bucket.list_blobs(prefix=dir_path)
@@ -92,28 +74,95 @@ def download_model(gcs_path,outpath, bucket):
     for blob in blobs:
         blob_bn = os.path.basename(blob.name)
         if blob_bn == bn:
-            destination_uri = '{}/{}'.format(outpath, blob_bn)
+            destination_uri = '{}/{}'.format(outpath, blob_bn) #download model 
             mdl_path = destination_uri
         elif blob_bn == 'args.pkl':
-            destination_uri = '{}/model_args.pkl'.format(outpath)
+            destination_uri = '{}/model_args.pkl'.format(outpath) #download args.pkl as model_args.pkl
+        else:
+            continue #skip any other files
         if not os.path.exists(destination_uri):
             blob.download_to_filename(destination_uri)
    
     return mdl_path
 
-
-def upload(gcs_prefix, path, bucket):
+def upload(gcs_dir, path, bucket):
+    '''
+    Upload a file to a google cloud storage bucket
+    Inputs:
+    :param gcs_dir: directory path in the bucket to save file to (no gs://project-name in the path)
+    :param path: local string path of the file to upload
+    :param bucket: initialized GCS bucket object
+    '''
     assert bucket is not None, 'no bucket given for uploading'
-    if gcs_prefix is None:
-        gcs_prefix = os.path.dirname(path)
-    blob = bucket.blob(os.path.join(gcs_prefix, os.path.basename(path)))
+    if gcs_dir is None:
+        gcs_dir = os.path.dirname(path)
+    blob = bucket.blob(os.path.join(gcs_dir, os.path.basename(path)))
     blob.upload_from_filename(path)
+
+#Load functions
+def load_args(args):
+    '''
+    Load in an .pkl file of args
+    :param args: dict with all the argument values
+    '''
+    # assumes that the model is saved in the same folder as an args.pkl file 
+    folder = os.path.basename(os.path.dirname(args.finetuned_mdl_path))
+
+    if os.path.exists(os.path.join(folder, 'model_args.pkl')): #if downloaded from gcs into the exp dir, it should be saved under mdl_args.pkl to make sure it doesn't overwrite the args.pkl
+        with open(os.path.join(folder, 'model_args.pkl'), 'rb') as f:
+            model_args = pickle.load(f)
+    elif os.path.exists(os.path.join(folder, 'args.pkl')): #if not downloaded and instead stored in a local place, it will be saved as args.pkl
+        with open(os.path.join(folder, 'args.pkl'), 'rb') as f:
+            model_args = pickle.load(f)
+    else: #if there are no saved args
+        print('No args.pkl or model_args.pkl stored with the finetuned model. Using the current args for initializing the finetuned model instead.')
+        model_args = args
+    
+    return model_args
+
+def setup_mdl_args(args):
+    '''
+    Get model args used during finetuning of the specified model
+    :param args: dict with all the argument values
+    '''
+    #if running a pretrained model only, use the args from this run
+    if args.finetuned_mdl_path is None:
+        model_args = args
+    else:
+    #if running a finetuned model
+        #(1): check if saved on cloud and load the model and args.pkl
+        if args.finetuned_mdl_path[:5] =='gs://':
+                mdl_path = args.finetuned_mdl_path[5:].replace(args.bucket_name,'')[1:]
+                args.finetuned_mdl_path = download_model(mdl_path, args.exp_dir, args.bucket)
+        
+        #(2): load the args used for finetuning
+        model_args = load_args(args)
+
+        #(3): check if the checkpoint for the finetuned model is downloaded
+        if model_args.checkpoint[:5] =='gs://': #if checkpoint on cloud
+            checkpoint = model_args.checkpoint[5:].replace(model_args.bucket_name,'')[1:]
+            if model_args.bucket_name != args.bucket_name: #if the bucket is not the same as the current bucket, initialize the bucket for downloading
+                if args.bucket_name is not None:
+                    storage_client = storage.Client(project=model_args.project_name)
+                    model_args.bucket = storage_client.bucket(model_args.bucket_name)
+                else:
+                    model_args.bucket = None
+
+                checkpoint = download_dir(checkpoint, model_args.bucket) #download with the new bucket
+            else:
+                checkpoint = download_dir(checkpoint, args.bucket) #download with the current bucket
+            model_args.checkpoint = checkpoint #reset the checkpoint path
+        else: #load in from local machine, just need to check that the path exists
+            assert os.path.exists(model_args.checkpoint), 'Current checkpoint does not exist on local machine'
+
+    return model_args
+
 
 def load_data(args):
     """
     Load the train and test data from a directory. Assumes the train and test data will exist in this directory under train.csv and test.csv
     :param args: dict with all the argument values
-    :return diag_train, diag_test: dataframes with target labels selected
+    :return train_df, val_df, test_df: loaded dataframes with annotations
     """
     train_path = f'{args.data_split_root}/train.csv'
     test_path = f'{args.data_split_root}/test.csv'
@@ -139,7 +188,7 @@ def get_transform(args):
     Set up pre-processing transform for raw samples 
     Loads data, reduces to 1 channel, downsamples, trims silence, truncate(?) and run feature extraction
     :param args: dict with all the argument values
-    return: transform: transforms object 
+    return transform: transforms object 
     """
     waveform_loader = UidToWaveform(prefix = args.prefix, bucket=args.bucket, lib=args.lib)
     transform_list = [waveform_loader]
@@ -259,16 +308,23 @@ def train_loop(args, model, dataloader_train, dataloader_val=None):
                 #upload_from_memory(model.state_dict(), args.cloud_dir, mdl_path, args.bucket)
                 upload(args.cloud_dir, mdl_path, args.bucket)
 
-    print('Training finished')
     mdl_path = os.path.join(args.exp_dir, '{}_{}_{}_epoch{}_{}_mdl.pt'.format(args.dataset, args.n_class, args.optim,os.path.basename(args.checkpoint), args.epochs))
     torch.save(model.state_dict(), mdl_path)
 
     if args.cloud:
         upload(args.cloud_dir, mdl_path, args.bucket)
 
+    print('Training finished')
     return model
 
 def val_loop(model, criterion, dataloader_val):
+    '''
+    Validation loop for finetuning the w2v2 classification head. 
+    :param model: W2V2 model
+    :param criterion: loss function
+    :param dataloader_val: dataloader object with validation data
+    :return validation_loss: list with validation loss for each batch
+    '''
     validation_loss = list()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
@@ -291,8 +347,8 @@ def eval_loop(args, model, dataloader_eval):
     :param args: dict with all the argument values
     :param model: W2V2 model
     :param dataloader_eval: dataloader object with evaluation data
-    :return preds: model predictions
-    :return targets: model targets (actual values)
+    :return outputs: model predictions
+    :return t: model targets (actual values)
     """
     print('Evaluation start')
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -322,14 +378,15 @@ def eval_loop(args, model, dataloader_eval):
         upload(args.cloud_dir, pred_path, args.bucket)
         upload(args.cloud_dir, target_path, args.bucket)
 
+    print('Evaluation finished')
     return outputs, t
 
 def embedding_loop(model, dataloader,embedding_type='ft'):
     """
     Run a specific subtype of evaluation for getting embeddings.
-    :param args: dict with all the argument values
     :param model: W2V2 model
     :param dataloader_eval: dataloader object with data to get embeddings for
+    :param embedding_type: string specifying whether embeddings should be extracted from classification head (ft) or base pretrained model (pt)
     :return embeddings: an np array containing the embeddings
     """
     print('Getting embeddings')
@@ -375,11 +432,10 @@ def get_embeddings(args):
     """
     Run embedding extraction from start to finish
     :param args: dict with all the argument values
-    :param bucket: google storage bucket object where data is saved
     """
     print('Running Embedding Extraction: ')
     # Get original 
-    model_args = setup_mdl(args)
+    model_args = setup_mdl_args(args)
 
     # (1) load data to get embeddings for
     assert '.csv' in args.data_split_root, f'A csv file is necessary for embedding extraction. Please make sure this is a full file path: {args.data_split_root}'
@@ -396,7 +452,7 @@ def get_embeddings(args):
     dataloader = DataLoader(waveform_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
     
     # (4) set up embedding model
-    model = Wav2Vec2ForSpeechClassification(model_args.checkpoint, model_args.pooling_mode, model_args.n_class,args.freeze) #should look like the finetuned model (so using model_args). If pretrained model, will resort to current args
+    model = Wav2Vec2ForSpeechClassification(model_args.checkpoint, model_args.pooling_mode, model_args.n_class,args.freeze, activation='relu', dropout=0.25, layernorm=False) #should look like the finetuned model (so using model_args). If pretrained model, will resort to current args
     
     if args.finetuned_mdl_path is not None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -404,15 +460,16 @@ def get_embeddings(args):
         model.load_state_dict(sd, strict=False)
 
     # (5) get embeddings
-    embeddings = embedding_loop(model, dataloader, args.embedding_task)
+    embeddings = embedding_loop(model, dataloader, args.embedding_type)
         
     df_embed = pd.DataFrame([[r] for r in embeddings], columns = ['embedding'], index=annotations_df.index)
 
     try:
         if args.finetuned_mdl_path is not None:
-            pqt_path = '{}/{}_{}_{}_embeddings.pqt'.format(args.exp_dir, args.dataset, os.path.basename(args.finetuned_mdl_path)[:-3], args.embedding_type)
+            args.finetuned_mdl_path = args.finetuned_mdl_path.replace(os.path.commonprefix([args.dataset, os.path.basename(args.finetuned_mdl_path)]), '')
+            pqt_path = '{}/{}_{}_{}_embeddings.pqt'.format(args.exp_dir, args.dataset, os.path.basename(args.finetuned_mdl_path)[:-3], args.embedding_type) #TODO: can mess with naming conventions later
         else:
-            pqt_path = '{}/{}_{}_{}_embeddings.pqt'.format(args.exp_dir, args.dataset, os.path.basename(args.checkpoint), args.embedding_type)
+            pqt_path = '{}/{}_{}_{}_embeddings.pqt'.format(args.exp_dir, args.dataset, os.path.basename(args.checkpoint), args.embedding_type) #TODO: can mess with naming conventions later
         df_embed.to_parquet(path=pqt_path, index=True, engine='pyarrow') #TODO: fix
 
         if args.cloud:
@@ -428,6 +485,7 @@ def get_embeddings(args):
         if args.cloud:
             upload(args.cloud_dir, csv_path, args.bucket)
 
+    print('Embedding extraction finished')
     return df_embed
 
 def finetuning(args):
@@ -438,20 +496,20 @@ def finetuning(args):
     print('Running finetuning: ')
     # (1) load data
     assert '.csv' not in args.data_split_root, f'May have given a full file path, please confirm this is a directory: {args.data_split_root}'
-    diag_train, diag_val, diag_test = load_data(args)
+    train_df, val_df, test_df = load_data(args)
 
     if args.debug:
-        diag_train = diag_train.iloc[0:8,:]
-        diag_val = diag_val.iloc[0:8,:]
-        diag_test = diag_test.iloc[0:8,:]
+        train_df = train_df.iloc[0:8,:]
+        val_df = val_df.iloc[0:8,:]
+        test_df = test_df.iloc[0:8,:]
 
     # (2) get data transforms    
     transform = get_transform(args)
 
     # (3) set up datasets and dataloaders
-    dataset_train = WaveformDataset(diag_train, target_labels = args.target_labels, transform = transform)
-    dataset_val = WaveformDataset(diag_val, target_labels = args.target_labels, transform = transform)
-    dataset_test = WaveformDataset(diag_test, target_labels = args.target_labels, transform = transform)
+    dataset_train = WaveformDataset(train_df, target_labels = args.target_labels, transform = transform)
+    dataset_val = WaveformDataset(val_df, target_labels = args.target_labels, transform = transform)
+    dataset_test = WaveformDataset(test_df, target_labels = args.target_labels, transform = transform)
 
     dataloader_train = DataLoader(dataset_train, batch_size = args.batch_size, shuffle = True, num_workers = args.num_workers)
     dataloader_val= DataLoader(dataset_val, batch_size = 1, shuffle = False, num_workers = args.num_workers)
@@ -459,13 +517,15 @@ def finetuning(args):
     #dataloader_test = DataLoader(dataset_test, batch_size = len(diag_test), shuffle = False, num_workers = args.num_workers)
 
     # (4) initialize model
-    model = Wav2Vec2ForSpeechClassification(args.checkpoint, args.pooling_mode, args.n_class, args.freeze)
+    model = Wav2Vec2ForSpeechClassification(args.checkpoint, args.pooling_mode, args.n_class, args.freeze, activation='relu', dropout=0.25, layernorm=False)    
     
     # (5) start fine-tuning classification
     model = train_loop(args, model, dataloader_train, dataloader_val)
 
     # (6) start evaluating
     preds, targets = eval_loop(args, model, dataloader_test)
+
+    print('Finetuning finished')
 
     # (7) performance metrics
     #metrics(args, preds, targets)
@@ -476,7 +536,7 @@ def eval_only(args):
     :param args: dict with all the argument values
     """
     # get original model args (or if no finetuned model, uses your original args)
-    model_args = setup_mdl(args)
+    model_args = setup_mdl_args(args)
     
    # (1) load data
     if '.csv' in args.data_split_root: 
@@ -485,7 +545,7 @@ def eval_only(args):
         train_df, val_df, eval_df = load_data(args)
     
     if args.debug:
-        diag_eval = diag_eval.iloc[0:8,:]
+        eval_df = eval_df.iloc[0:8,:]
 
     # (2) get data transforms    
     transform = get_transform(args)
@@ -514,23 +574,23 @@ def main():
     #Inputs
     parser.add_argument('-i','--prefix',default='speech_ai/speech_lake/', help='Input directory or location in google cloud storage bucket containing files to load')
     parser.add_argument("-s", "--study", choices = ['r01_prelim','speech_poc_freeze_1', None], default='speech_poc_freeze_1', help="specify study name")
-    parser.add_argument("-d", "--data_split_root", default='gs://ml-e107-phi-shared-aif-us-p/speech_ai/share/data_splits/amr_subject_dedup_594_train_100_test_binarized_v20220620', help="specify file path where datasplit is located. If you give a full file path to classification, an error will be thrown. On the other hand, evaluation and embedding expects a single .csv file.")
+    parser.add_argument("-d", "--data_split_root", default='gs://ml-e107-phi-shared-aif-us-p/speech_ai/share/data_splits/amr_subject_dedup_594_train_100_test_binarized_v20220620/test.csv', help="specify file path where datasplit is located. If you give a full file path to classification, an error will be thrown. On the other hand, evaluation and embedding expects a single .csv file.")
     parser.add_argument('-l','--label_txt', default='./labels.txt')
     parser.add_argument('--lib', default=False, type=bool, help="Specify whether to load using librosa as compared to torch audio")
     #GCS
     parser.add_argument('-b','--bucket_name', default='ml-e107-phi-shared-aif-us-p', help="google cloud storage bucket name")
     parser.add_argument('-p','--project_name', default='ml-mps-aif-afdgpet01-p-6827', help='google cloud platform project name')
-    parser.add_argument('--cloud', default=True, type=bool, help="Specify whether to save everything to cloud")
+    parser.add_argument('--cloud', default=False, type=bool, help="Specify whether to save everything to cloud")
     #output
     parser.add_argument("--dataset", default=None,type=str, help="When saving, the dataset arg is used to set file names. If you do not specify, it will assume the lowest directory from data_split_root")
-    parser.add_argument("-o", "--exp_dir", default="./experiments", help='specify LOCAL output directory')
-    parser.add_argument('--cloud_dir', default='m144443/temp_out/submit_ex', type=str, help="if saving to the cloud, you can specify a specific place to save to in the CLOUD bucket")
+    parser.add_argument("-o", "--exp_dir", default="./experiments2", help='specify LOCAL output directory')
+    parser.add_argument('--cloud_dir', default='m144443/temp_out/w2v2_ft_debug', type=str, help="if saving to the cloud, you can specify a specific place to save to in the CLOUD bucket")
     #Mode specific
-    parser.add_argument("-m", "--mode", choices=['finetune','eval-only','extraction'], default='finetune')
+    parser.add_argument("-m", "--mode", choices=['finetune','eval','extraction'], default='extraction')
     parser.add_argument("--freeze", type=bool, default=True, help='specify whether to freeze the base model')
     parser.add_argument("-c", "--checkpoint", default="gs://ml-e107-phi-shared-aif-us-p/m144443/checkpoints/wav2vec2-base-960h", help="specify path to pre-trained model weight checkpoint")
-    parser.add_argument("-mp", "--finetuned_mdl_path", default=None, help='If running eval-only or extraction, you have the option to load a fine-tuned model by specifying the save path here. If passed a gs:// file, will download to local machine.')
-    parser.add_argument('--embedding_type', type=str, default='ft', help='specify whether embeddings should be extracted from classification head (ft) or base pretrained model (pt)', choices=['ft','pt'])
+    parser.add_argument("-mp", "--finetuned_mdl_path", default='gs://ml-e107-phi-shared-aif-us-p/m144443/temp_out/amr_subject_dedup_594_train_100_test_binarized_v20220620_epoch1_w2v2_mdl.pt', help='If running eval-only or extraction, you have the option to load a fine-tuned model by specifying the save path here. If passed a gs:// file, will download to local machine.')
+    parser.add_argument('--embedding_type', type=str, default='pt', help='specify whether embeddings should be extracted from classification head (ft) or base pretrained model (pt)', choices=['ft','pt'])
     #Audio transforms
     parser.add_argument("--resample_rate", default=16000,type=int, help='resample rate for audio files')
     parser.add_argument("--reduce", default=True, type=bool, help="Specify whether to reduce to monochannel")
@@ -593,11 +653,13 @@ def main():
         except:
             args.batch_size = 1
 
-    # (7) check if checkpoint is stored in gcs bucket
+    # (7) check if checkpoint is stored in gcs bucket or confirm it exists on local machine
     if args.checkpoint[:5] =='gs://':
         checkpoint = args.checkpoint[5:].replace(args.bucket_name,'')[1:]
-        checkpoint = download_checkpoint(checkpoint, bucket)
+        checkpoint = download_dir(checkpoint, bucket)
         args.checkpoint = checkpoint
+    else:
+        assert os.path.exists(args.checkpoint), 'Current checkpoint does not exist on local machine'
 
     # (8) dump arguments
     args_path = "%s/args.pkl" % args.exp_dir
@@ -615,7 +677,7 @@ def main():
     if args.mode == "finetune":
         finetuning(args)
 
-    elif args.mode == 'eval-only':
+    elif args.mode == 'eval':
         eval_only(args)
               
     elif args.mode == "extraction":

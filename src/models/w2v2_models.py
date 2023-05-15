@@ -66,7 +66,7 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
         Initialize with a HuggingFace checkpoint (string path), pooling mode (mean, sum, max), and number of classes (num_labels)
     Source: https://colab.research.google.com/github/m3hrdadfi/soxan/blob/main/notebooks/Eating_Sound_Collection_using_Wav2Vec2.ipynb#scrollTo=Fv62ShDsH5DZ
     """
-    def __init__(self, checkpoint, pooling_mode, num_labels, freeze=True):
+    def __init__(self, checkpoint, pooling_mode, num_labels, freeze=True, activation='relu', dropout=0.25, layernorm=False):
         """
         :param checkpoint: path to where model checkpoint is saved (str)
         :param pooling_mode: specify which method of pooling from ['mean', 'sum', 'max'] (str)
@@ -83,7 +83,7 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
             for param in self.model.parameters():
                 param.requires_grad = False
 
-        self.classifier = ClassificationHead(768,self.num_labels,activation='relu', final_dropout=0.25,layernorm=False)
+        self.classifier = ClassificationHead(768,self.num_labels,activation=activation, final_dropout=dropout,layernorm=layernorm)
         
 
     def merged_strategy(

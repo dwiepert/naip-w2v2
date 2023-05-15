@@ -62,7 +62,10 @@ There are many possible arguments to set, including all the parameters associate
 
 ### Run mode
 * `-m, --mode`: Specify the mode you are running, i.e., whether to run fine-tuning for classification ('finetune'), evaluation only ('eval-only'), or embedding extraction ('extraction'). Default is 'finetune'.
-* `-mp, --mdl_path`: if running eval-only or extraction, you can specify a fine-tuned model to load in. This can either be a local path of a 'gs://' path, that latter of which will trigger the code to download the specified model path to the local machine. 
+* `--freeze`: specify whether to freeze the base model
+* `-c, --checkpoint`: specify a pretrained model checkpoint - this is a base model from w2v2, as mentioned earlier. Default is 'facebook/wav2vec2-base-960h' which is a base model trained on 960h of Librispeech. This is required regardless of whether you include a fine-tuned model path. 
+* `-mp, --finetuned_mdl_path`: if running eval-only or extraction, you can specify a fine-tuned model to load in. This can either be a local path of a 'gs://' path, that latter of which will trigger the code to download the specified model path to the local machine. 
+* `--embedding_type`: specify whether embeddings should be extracted from classification head (ft) or base pretrained model (pt)
 
 ### Audio transforms
 * `--resample_rate`: an integer value for resampling. Default to 16000
@@ -71,7 +74,6 @@ There are many possible arguments to set, including all the parameters associate
 * `--trim`: boolean indicating whether to trim silence. Default to False.
 
 ### Model parameters
-* `-c, --checkpoint`: specify a pretrained model checkpoint - this is a base model from w2v2, as mentioned earlier. Default is 'facebook/wav2vec2-base-960h' which is a base model trained on 960h of Librispeech. This is required regardless of whether you include a fine-tuned model path. 
 * `-pm, --pooling_mode`: specify method of pooling the last hidden layer for embedding extraction. Options are 'mean', 'sum', 'max'.
 * `-bs, --batch_size`: set the batch size (default 8)
 * `-nw, --num_workers`: set number of workers for dataloader (default 0)

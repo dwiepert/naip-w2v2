@@ -57,25 +57,19 @@ class ClassificationHead(nn.Module):
         self.layernorm = layernorm
         self.final_dropout = final_dropout
 
-        self.norm = nn.LayerNorm(self.input_size)
-        self.dense = nn.Linear(self.input_size, self.input_size) 
-        self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(self.final_dropout)
-        self.out_proj = nn.Linear(self.input_size, self.output_size)
-
         classifier = []
         key = []
         if self.layernorm:
-            classifier.append(self.norm)
+            classifier.append(nn.LayerNorm(self.input_size))
             key.append('norm')
-        classifier.append(self.dense)
+        classifier.append(nn.Linear(self.input_size, self.input_size) )
         key.append('dense')
         if self.activation == 'relu':
-            classifier.append(self.relu)
+            classifier.append(nn.ReLU())
             key.append('relu')
-        classifier.append(self.dropout)
+        classifier.append(nn.Dropout(self.final_dropout))
         key.append('dropout')
-        classifier.append(self.out_proj)
+        classifier.append(nn.Linear(self.input_size, self.output_size))
         key.append('outproj')
 
         seq = []
