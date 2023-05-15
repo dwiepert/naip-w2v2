@@ -110,11 +110,14 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
         return outputs
 
     def extract_embeddings(self, x, 
-                              embedding_type='ft', 
+                              embedding_type='ft',
+                              layer=-1, 
                               attention_mask=None):
         """
         Run model
         :param input_values: input values to the model (batch_size, input_size)
+        :param embedding_type: 'ft' or 'pt' to indicate whether to extract from classification head or last hidden state
+        :param layer: hidden layer to take out and do results for - must be between 0-12
         :param attention_mask: give attention mask to model (default=None)
         :return logits: classifier output (batch_size, num_labels)
         """
@@ -132,7 +135,7 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
 
         elif embedding_type == 'pt':
             outputs = self.model(x, attention_mask=attention_mask)
-            hidden_states = outputs['hidden_states'][-1]
+            hidden_states = outputs['hidden_states'][layer]
             e = self.merged_strategy(hidden_states, mode=self.pooling_mode)
 
         else:

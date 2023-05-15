@@ -221,13 +221,14 @@ def get_transform(args):
     return transform
 
 #model loops
-def train_loop(args, model, dataloader_train, dataloader_val=None):
+def train_loop(args, model, dataloader_train, dataloader_val=None, layer=-1):
     """
     Training loop for finetuning the w2v2 classification head. 
     :param args: dict with all the argument values
     :param model: W2V2 model
     :param dataloader_train: dataloader object with training data
     :param dataloader_val: dataloader object with validation data
+    :param layer: hidden layer to take out and do results for - must be between 0-12
     :return model: fine-tuned w2v2 model
     """
     print('Training start')
@@ -264,7 +265,7 @@ def train_loop(args, model, dataloader_train, dataloader_val=None):
             targets = batch['targets']
             x, targets = x.to(device), targets.to(device)
             optim.zero_grad()
-            o = model(x)
+            o = model(x, layer=layer)
             loss = criterion(o, targets)
             loss.backward()
             optim.step()
@@ -291,7 +292,7 @@ def train_loop(args, model, dataloader_train, dataloader_val=None):
 
             if dataloader_val is not None:
                 print("Validation start")
-                validation_loss = val_loop(model, criterion, dataloader_val)
+                validation_loss = val_loop(model, criterion, dataloader_val, layer)
 
                 logs['val_loss_list'] = validation_loss
                 validation_loss = np.array(validation_loss)
@@ -325,12 +326,13 @@ def train_loop(args, model, dataloader_train, dataloader_val=None):
     print('Training finished')
     return model
 
-def val_loop(model, criterion, dataloader_val):
+def val_loop(model, criterion, dataloader_val, layer=-1):
     '''
     Validation loop for finetuning the w2v2 classification head. 
     :param model: W2V2 model
     :param criterion: loss function
     :param dataloader_val: dataloader object with validation data
+    :param layer: hidden layer to take out and do results for - must be between 0-12
     :return validation_loss: list with validation loss for each batch
     '''
     validation_loss = list()
@@ -342,14 +344,14 @@ def val_loop(model, criterion, dataloader_val):
             x = torch.squeeze(batch['waveform'], dim=1)
             targets = batch['targets']
             x, targets = x.to(device), targets.to(device)
-            o = model(x)
+            o = model(x, layer=layer)
             val_loss = criterion(o, targets)
             validation_loss.append(val_loss.item())
 
     return validation_loss
     
 
-def eval_loop(model, dataloader_eval, exp_dir, cloud=False, cloud_dir=None, bucket=None):
+def eval_loop(model, dataloader_eval, exp_dir, cloud=False, cloud_dir=None, bucket=None, layer=-1):
     """
     Start model evaluation
     :param model: SSAST model
@@ -358,6 +360,7 @@ def eval_loop(model, dataloader_eval, exp_dir, cloud=False, cloud_dir=None, buck
     :param cloud: boolean to specify whether to save everything to google cloud storage
     :param cloud_dir: if saving to the cloud, you can specify a specific place to save to in the CLOUD bucket
     :param bucket: google cloud storage bucket object
+    :param layer: hidden layer to take out and do results for - must be between 0-12
     :return preds: model predictions
     :return targets: model targets (actual values)
     """
@@ -373,7 +376,7 @@ def eval_loop(model, dataloader_eval, exp_dir, cloud=False, cloud_dir=None, buck
             x = x.to(device)
             targets = batch['targets']
             targets = targets.to(device)
-            o = model(x)
+            o = model(x, layer=layer)
             outputs.append(o)
             t.append(targets)
 
@@ -392,13 +395,14 @@ def eval_loop(model, dataloader_eval, exp_dir, cloud=False, cloud_dir=None, buck
     print('Evaluation finished')
     return outputs, t
 
-def embedding_loop(model, dataloader,embedding_type='ft'):
+def embedding_loop(model, dataloader,embedding_type='ft',layer=-1):
     """
     Run a specific subtype of evaluation for getting embeddings.
     :param model: W2V2 model
     :param dataloader_eval: dataloader object with data to get embeddings for
     :param embedding_type: string specifying whether embeddings should be extracted from classification head (ft) or base pretrained model (pt)
     :return embeddings: an np array containing the embeddings
+    :param layer: hidden layer to take out and do results for - must be between 0-12
     """
     print('Getting embeddings')
     embeddings = np.array([])
@@ -412,7 +416,7 @@ def embedding_loop(model, dataloader,embedding_type='ft'):
         for batch in tqdm(dataloader):
             x = torch.squeeze(batch['waveform'], dim=1)
             x = x.to(device)
-            e = model.extract_embeddings(x, embedding_type)
+            e = model.extract_embeddings(x, embedding_type,layer=layer)
             e = e.cpu().numpy()
             if embeddings.size == 0:
                 embeddings = e
@@ -474,7 +478,7 @@ def get_embeddings(args):
         args.embedding_type = 'pt' #manually change the type to 'pt' if not given a finetuned mdl path.
 
     # (5) get embeddings
-    embeddings = embedding_loop(model, dataloader, args.embedding_type)
+    embeddings = embedding_loop(model, dataloader, args.embedding_type, args.layer)
         
     df_embed = pd.DataFrame([[r] for r in embeddings], columns = ['embedding'], index=annotations_df.index)
 
@@ -535,10 +539,10 @@ def finetuning(args):
     model = Wav2Vec2ForSpeechClassification(args.checkpoint, args.pooling_mode, args.n_class, args.freeze, activation='relu', dropout=0.25, layernorm=False)    
     
     # (5) start fine-tuning classification
-    model = train_loop(args, model, dataloader_train, dataloader_val)
+    model = train_loop(args, model, dataloader_train, dataloader_val, args.layer)
 
     # (6) start evaluating
-    preds, targets = eval_loop(args, model, dataloader_test)
+    preds, targets = eval_loop(model, dataloader_test, args.exp_dir, args.cloud, args.cloud_dir, args.bucket, args.layer)
 
     print('Finetuning finished')
 
@@ -581,7 +585,7 @@ def eval_only(args):
         print(f'Evaluating only a pretrained model: {args.pretrained_mdl_path}')
 
     # (6) start evaluating
-    preds, targets = eval_loop(args, model, dataloader_eval)
+    preds, targets = eval_loop(model, dataloader_eval, args.exp_dir, args.cloud, args.cloud_dir, args.bucket, args.layer)
 
     # (7) performance metrics
     #metrics(args, preds, targets)
@@ -614,6 +618,7 @@ def main():
     parser.add_argument("--clip_length", default=160000, type=int, help="If truncating audio, specify clip length in # of frames. 0 = no truncation")
     parser.add_argument("--trim", default=True, type=int, help="trim silence")
     #Model parameters
+    parser.add_argument("--layer", default=-1, type=int, help="specify which hidden state is being used. It can be between -1 and 12")
     parser.add_argument("-pm", "--pooling_mode", default="mean", help="specify method of pooling last hidden layer", choices=['mean','sum','max'])
     parser.add_argument("-bs", "--batch_size", type=int, default=8, help="specify batch size")
     parser.add_argument("-nw", "--num_workers", type=int, default=0, help="specify number of parallel jobs to run for data loader")

@@ -5,10 +5,9 @@ This implementation contains options for finetuning a pretrained w2v2 model, eva
 
 All data is loaded using the simple `WaveformDataset` class implemented in [dataloader_utils.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/utilities/dataloader_utils.py). It is initialized with a dataframe of labels, indexed by a unique identifier, along with a list of the target labels (df column names), and a transforms object with all of the transforms to perform on an audio file. When loading a sample with this class, it will output a dictionary containing the loaded waveform as a tensor (`sample['waveform']`), the target labels as a tensor (`sample['targets']`), and the unique identifier for the sample (`sample['uid']`).
 
-The transform classes are also implemented in [dataloader_utils.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/utilities/dataloader_utils.py). See the `get_transforms(...)` function in [run.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/run.py) to see the transforms used for w2v2, or explore [dataloader_utils.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/utilities/dataloader_utils.py) for other transform options.Note that when initializing transforms, you can alter the  `bucket` variable and `lib` variable. As a default, `bucket` is set to None, which will force loading from the local machine. If using GCS, pass a fully initialized bucket. Setting the `lib` value to 'True' will cause the audio to be loaded using librosa rather than torchaudio. 
+The transform classes are also implemented in [speech_utils.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/utilities/speech_utils.py). See the `get_transforms(...)` function in [run.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/run.py) to see the transforms used for w2v2, or explore [speech_utils.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/utilities/speech_utils.py) for other transform options.Note that when initializing transforms, you can alter the  `bucket` variable and `lib` variable. As a default, `bucket` is set to None, which will force loading from the local machine. If using GCS, pass a fully initialized bucket. Setting the `lib` value to 'True' will cause the audio to be loaded using librosa rather than torchaudio. 
 
-This implementation uses wrapper classes over the [wav2vec2 models](https://huggingface.co/docs/transformers/model_doc/wav2vec2) available from HuggingFace. The `Wav2Vec2ForSpeechClassification` is used for finetuning and evaluation (adding a classification head with a Dense layer, ReLU activation, dropout, and a final linear projection layer to an original w2v2 model). The `Wav2Vec2ForEmbeddingExtraction` is used to extract and pool the final hidden layer of a w2v2 model to serve as an embedding with 768 dims. See [w2v2_models.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/models/w2v2_models.py) for information on intialization arguments.
-
+This implementation uses wrapper classes over the [wav2vec2 models](https://huggingface.co/docs/transformers/model_doc/wav2vec2) available from HuggingFace. The `Wav2Vec2ForSpeechClassification` is the wrapped model, which includes an added classification head with a Dense layer, ReLU activation, dropout, and a final linear projection layer (this class is defined as `ClassificationHead` in [speech_utils.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/utilities/speech_utils.py)) as well as a function for embedding extraction. See [w2v2_models.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/models/w2v2_models.py) for information on intialization arguments. Note: you can specify a specific hidden state to use for classification and embedding extraction using the `--layer` argument. 
 
 ## Running Environment
 The environment must include the following packages, all of which can be dowloaded with pip or conda:
@@ -20,7 +19,6 @@ The environment must include the following packages, all of which can be dowload
 * pyarrow
 
 If running on your local machine and not in a GCP environment, you will also need to install:
-* google-cloud
 * google-cloud-storage
 
 The [requirements.txt](https://github.com/dwiepert/mayo-w2v2/blob/main/requirements.txt) can be used to set up this environment. 
@@ -62,7 +60,7 @@ There are many possible arguments to set, including all the parameters associate
 
 ### Run mode
 * `-m, --mode`: Specify the mode you are running, i.e., whether to run fine-tuning for classification ('finetune'), evaluation only ('eval-only'), or embedding extraction ('extraction'). Default is 'finetune'.
-* `--freeze`: specify whether to freeze the base model
+* `--freeze`: boolean to specify whether to freeze the base model
 * `-c, --checkpoint`: specify a pretrained model checkpoint - this is a base model from w2v2, as mentioned earlier. Default is 'facebook/wav2vec2-base-960h' which is a base model trained on 960h of Librispeech. This is required regardless of whether you include a fine-tuned model path. 
 * `-mp, --finetuned_mdl_path`: if running eval-only or extraction, you can specify a fine-tuned model to load in. This can either be a local path of a 'gs://' path, that latter of which will trigger the code to download the specified model path to the local machine. 
 * `--embedding_type`: specify whether embeddings should be extracted from classification head (ft) or base pretrained model (pt)
@@ -74,6 +72,7 @@ There are many possible arguments to set, including all the parameters associate
 * `--trim`: boolean indicating whether to trim silence. Default to False.
 
 ### Model parameters
+* `--layer`:  specify which hidden state is being used. It can be between -1 and 12.
 * `-pm, --pooling_mode`: specify method of pooling the last hidden layer for embedding extraction. Options are 'mean', 'sum', 'max'.
 * `-bs, --batch_size`: set the batch size (default 8)
 * `-nw, --num_workers`: set number of workers for dataloader (default 0)
@@ -86,8 +85,10 @@ There are many possible arguments to set, including all the parameters associate
 
 For more information on arguments, you can also run `python run.py -h`. 
 
+## Embedding Extraction
+Embedding extraction is now a function within the wrapped Wav2Vec2 model `Wav2Vec2ForSpeechClassification` model (see `extract_embeddings(...)` in [w2v2_models.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/models/w2v2_models.py)). Notably, this function contains options to extract either the output of the Dense layer from the classification head or the final hidden layer of the base W2V2 model by specifying `embedding_type` as either `ft` for 'finetuned' embedding (extracting from classification head) or `pt` for 'pretrained' embedding (extracting from w2v2 hidden states), on the basis that we generally freeze the base w2v2 model before finetuning. 
 
-
+We also have an option to extract embeddings from different hidden states by altering the `layer` argument, which takes an int between -1 and 12. 
 
 
 
