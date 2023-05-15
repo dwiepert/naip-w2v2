@@ -104,6 +104,7 @@ def load_args(args):
     '''
     Load in an .pkl file of args
     :param args: dict with all the argument values
+    :return model_args: dict with all the argument values from the finetuned model
     '''
     # assumes that the model is saved in the same folder as an args.pkl file 
     folder = os.path.basename(os.path.dirname(args.finetuned_mdl_path))
@@ -159,14 +160,18 @@ def setup_mdl_args(args):
 
     return model_args, args.finetuned_mdl_path
 
-def load_data(args):
+def load_data(data_split_root, exp_dir, cloud=False, cloud_dir=None, bucket=None):
     """
     Load the train and test data from a directory. Assumes the train and test data will exist in this directory under train.csv and test.csv
-    :param args: dict with all the argument values
+    :param data_split_root: specify str path where datasplit csvs are located
+    :param exp_dir: specify LOCAL output directory as str
+    :param cloud: boolean to specify whether to save everything to google cloud storage
+    :param cloud_dir: if saving to the cloud, you can specify a specific place to save to in the CLOUD bucket
+    :param bucket: google cloud storage bucket object
     :return train_df, val_df, test_df: loaded dataframes with annotations
     """
-    train_path = f'{args.data_split_root}/train.csv'
-    test_path = f'{args.data_split_root}/test.csv'
+    train_path = f'{data_split_root}/train.csv'
+    test_path = f'{data_split_root}/test.csv'
     #get data
     train_df = pd.read_csv(train_path, index_col = 'uid')
     test_df = pd.read_csv(test_path, index_col = 'uid')
@@ -176,14 +181,15 @@ def load_data(args):
     train_df = train_df.drop(val_df.index)
 
     #save validation set
-    val_path = os.path.join(args.exp_dir, 'validation.csv')
+    val_path = os.path.join(exp_dir, 'validation.csv')
     val_df.to_csv(val_path, index=True)
 
-    if args.cloud:
-        upload(args.cloud_dir, val_path, args.bucket)
+    if cloud:
+        upload(cloud_dir, val_path, bucket)
 
     return train_df, val_df, test_df
 
+#data transformations
 def get_transform(args):
     """
     Set up pre-processing transform for raw samples 
@@ -214,6 +220,7 @@ def get_transform(args):
     transform = torchvision.transforms.Compose(transform_list)
     return transform
 
+#model loops
 def train_loop(args, model, dataloader_train, dataloader_val=None):
     """
     Training loop for finetuning the w2v2 classification head. 
@@ -342,14 +349,17 @@ def val_loop(model, criterion, dataloader_val):
     return validation_loss
     
 
-def eval_loop(args, model, dataloader_eval):
+def eval_loop(model, dataloader_eval, exp_dir, cloud=False, cloud_dir=None, bucket=None):
     """
     Start model evaluation
-    :param args: dict with all the argument values
-    :param model: W2V2 model
+    :param model: SSAST model
     :param dataloader_eval: dataloader object with evaluation data
-    :return outputs: model predictions
-    :return t: model targets (actual values)
+    :param exp_dir: specify LOCAL output directory as str
+    :param cloud: boolean to specify whether to save everything to google cloud storage
+    :param cloud_dir: if saving to the cloud, you can specify a specific place to save to in the CLOUD bucket
+    :param bucket: google cloud storage bucket object
+    :return preds: model predictions
+    :return targets: model targets (actual values)
     """
     print('Evaluation start')
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -370,14 +380,14 @@ def eval_loop(args, model, dataloader_eval):
     outputs = torch.cat(outputs).cpu().detach()
     t = torch.cat(t).cpu().detach()
     # SAVE PREDICTIONS AND TARGETS 
-    pred_path = os.path.join(args.exp_dir, 'predictions.pt')
-    target_path = os.path.join(args.exp_dir, 'targets.pt')
+    pred_path = os.path.join(exp_dir, 'predictions.pt')
+    target_path = os.path.join(exp_dir, 'targets.pt')
     torch.save(outputs, pred_path)
     torch.save(t, target_path)
 
-    if args.cloud:
-        upload(args.cloud_dir, pred_path, args.bucket)
-        upload(args.cloud_dir, target_path, args.bucket)
+    if cloud:
+        upload(cloud_dir, pred_path, bucket)
+        upload(cloud_dir, target_path, bucket)
 
     print('Evaluation finished')
     return outputs, t
@@ -501,7 +511,7 @@ def finetuning(args):
     print('Running finetuning: ')
     # (1) load data
     assert '.csv' not in args.data_split_root, f'May have given a full file path, please confirm this is a directory: {args.data_split_root}'
-    train_df, val_df, test_df = load_data(args)
+    train_df, val_df, test_df = load_data(args.data_split_root, args.exp_dir, args.cloud, args.cloud_dir, args.bucket)
 
     if args.debug:
         train_df = train_df.iloc[0:8,:]
@@ -547,7 +557,7 @@ def eval_only(args):
     if '.csv' in args.data_split_root: 
         eval_df = pd.read_csv(args.data_split_root, index_col = 'uid')
     else:
-        train_df, val_df, eval_df = load_data(args)
+        train_df, val_df, eval_df = load_data(args.data_split_root, args.exp_dir, args.cloud, args.cloud_dir, args.bucket)
     
     if args.debug:
         eval_df = eval_df.iloc[0:8,:]

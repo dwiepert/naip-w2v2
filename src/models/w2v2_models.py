@@ -144,19 +144,22 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
     def forward(
             self,
             input_values,
+            layer=-1,
             attention_mask=None,
     ):
         """
         Run model
         :param input_values: input values to the model (batch_size, input_size)
+        :param layer: hidden layer to take out and do results for - must be between 0-12
         :param attention_mask: give attention mask to model (default=None)
         :return logits: classifier output (batch_size, num_labels)
         """
+        assert layer >= -1 and layer < 13, 'layer must be 0-12 or -1'
         outputs = self.model(
             input_values,
             attention_mask=attention_mask
         )
-        hidden_states = outputs['hidden_states'][-1]
+        hidden_states = outputs['hidden_states'][layer]
         hidden_states = self.merged_strategy(hidden_states, mode=self.pooling_mode)
         
         logits = self.classifier(hidden_states)   
