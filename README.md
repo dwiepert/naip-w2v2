@@ -40,17 +40,27 @@ In order to initialize a wav2vec 2.0 model, you must have access to a pretrained
 
 ## Data structure
 This code will only function with the following data structure.
+
 SPEECH DATA DIR
+
     |
+
     -- UID 
+
         |
+
         -- waveform.EXT (extension can be any audio file extension)
+        
         -- metadata.json (containing the key 'encoding' (with the extension in capital letters, i.e. mp3 as MP3), also containing the key 'sample_rate_hz' with the full sample rate)
 
 and for the data splits
+
 DATA SPLIT DIR
+
     |
+
     -- train.csv
+
     -- test.csv
 
 ## Arguments
