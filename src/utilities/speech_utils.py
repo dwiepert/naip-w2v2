@@ -75,6 +75,9 @@ class ClassificationHead(nn.Module):
         classifier.append(nn.Linear(self.input_size, self.output_size))
         key.append('outproj')
 
+        self.classifier=classifier
+        self.key=key
+
         seq = []
         for i in range(len(classifier)):
             seq.append((key[i],classifier[i]))
