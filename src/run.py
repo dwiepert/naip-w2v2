@@ -107,7 +107,7 @@ def load_args(args):
     :return model_args: dict with all the argument values from the finetuned model
     '''
     # assumes that the model is saved in the same folder as an args.pkl file 
-    folder = os.path.basename(os.path.dirname(args.finetuned_mdl_path))
+    folder = os.path.dirname(args.finetuned_mdl_path)
 
     if os.path.exists(os.path.join(folder, 'model_args.pkl')): #if downloaded from gcs into the exp dir, it should be saved under mdl_args.pkl to make sure it doesn't overwrite the args.pkl
         with open(os.path.join(folder, 'model_args.pkl'), 'rb') as f:
@@ -221,7 +221,7 @@ def get_transform(args):
     return transform
 
 #model loops
-def train_loop(args, model, dataloader_train, dataloader_val=None, layer=-1):
+def train_loop(args, model, dataloader_train, dataloader_val=None):
     """
     Training loop for finetuning the w2v2 classification head. 
     :param args: dict with all the argument values
@@ -265,7 +265,10 @@ def train_loop(args, model, dataloader_train, dataloader_val=None, layer=-1):
             targets = batch['targets']
             x, targets = x.to(device), targets.to(device)
             optim.zero_grad()
-            o = model(x, layer=layer)
+            if args.weighted_layers:
+                o = model.weighted_forward(x)
+            else:
+                o = model(x, layer=args.layer)
             loss = criterion(o, targets)
             loss.backward()
             optim.step()
@@ -292,7 +295,7 @@ def train_loop(args, model, dataloader_train, dataloader_val=None, layer=-1):
 
             if dataloader_val is not None:
                 print("Validation start")
-                validation_loss = val_loop(model, criterion, dataloader_val, layer)
+                validation_loss = val_loop(model, criterion, dataloader_val, args.layer, args.weighted_layers)
 
                 logs['val_loss_list'] = validation_loss
                 validation_loss = np.array(validation_loss)
@@ -303,13 +306,17 @@ def train_loop(args, model, dataloader_train, dataloader_val=None, layer=-1):
                 print(f'Validation loss: {np.mean(validation_loss)}')
             
             #SAVE LOGS
+            print(f'Saving epoch {e}')
             json_string = json.dumps(logs)
             logs_path = os.path.join(args.exp_dir, 'logs_epoch{}.json'.format(e))
             with open(logs_path, 'w') as outfile:
                 json.dump(json_string, outfile)
             
             #SAVE CURRENT MODEL
-            mdl_path = os.path.join(args.exp_dir, 'finetuned_{}_epoch{}.pt'.format(os.path.basename(args.checkpoint),e))
+            if args.weighted_layers:
+                mdl_path = os.path.join(args.exp_dir, 'finetuned_{}_epoch{}_weighted.pt'.format(os.path.basename(args.checkpoint),e))
+            else:
+                mdl_path = os.path.join(args.exp_dir, 'finetuned_{}_epoch{}.pt'.format(os.path.basename(args.checkpoint),e))
             torch.save(model.state_dict(), mdl_path)
             
             if args.cloud:
@@ -317,7 +324,11 @@ def train_loop(args, model, dataloader_train, dataloader_val=None, layer=-1):
                 #upload_from_memory(model.state_dict(), args.cloud_dir, mdl_path, args.bucket)
                 upload(args.cloud_dir, mdl_path, args.bucket)
 
-    mdl_path = os.path.join(args.exp_dir, '{}_{}_{}_epoch{}_{}_mdl.pt'.format(args.dataset, args.n_class, args.optim,os.path.basename(args.checkpoint), args.epochs))
+    print('Saving final epoch')
+    if args.weighted_layers:
+        mdl_path = os.path.join(args.exp_dir, '{}_{}_{}_epoch{}_{}_mdl_weighted.pt'.format(args.dataset, args.n_class, args.optim, args.epochs), os.path.basename(args.checkpoint))
+    else:
+        mdl_path = os.path.join(args.exp_dir, '{}_{}_{}_epoch{}_{}_mdl.pt'.format(args.dataset, args.n_class, args.optim, args.epochs, os.path.basename(args.checkpoint)))
     torch.save(model.state_dict(), mdl_path)
 
     if args.cloud:
@@ -326,13 +337,14 @@ def train_loop(args, model, dataloader_train, dataloader_val=None, layer=-1):
     print('Training finished')
     return model
 
-def val_loop(model, criterion, dataloader_val, layer=-1):
+def val_loop(model, criterion, dataloader_val, layer=-1, weighted_layers=False):
     '''
     Validation loop for finetuning the w2v2 classification head. 
     :param model: W2V2 model
     :param criterion: loss function
     :param dataloader_val: dataloader object with validation data
     :param layer: hidden layer to take out and do results for - must be between 0-12
+    :param weighted_layers: boolean to indicate whether you are weighting the hidden states
     :return validation_loss: list with validation loss for each batch
     '''
     validation_loss = list()
@@ -344,14 +356,17 @@ def val_loop(model, criterion, dataloader_val, layer=-1):
             x = torch.squeeze(batch['waveform'], dim=1)
             targets = batch['targets']
             x, targets = x.to(device), targets.to(device)
-            o = model(x, layer=layer)
+            if weighted_layers:
+                o = model.weighted_forward(x)
+            else:
+                o = model(x, layer=layer)
             val_loss = criterion(o, targets)
             validation_loss.append(val_loss.item())
 
     return validation_loss
     
 
-def eval_loop(model, dataloader_eval, exp_dir, cloud=False, cloud_dir=None, bucket=None, layer=-1):
+def eval_loop(model, dataloader_eval, exp_dir, cloud=False, cloud_dir=None, bucket=None, layer=-1, weighted_layers=False):
     """
     Start model evaluation
     :param model: SSAST model
@@ -361,6 +376,7 @@ def eval_loop(model, dataloader_eval, exp_dir, cloud=False, cloud_dir=None, buck
     :param cloud_dir: if saving to the cloud, you can specify a specific place to save to in the CLOUD bucket
     :param bucket: google cloud storage bucket object
     :param layer: hidden layer to take out and do results for - must be between 0-12
+    :param weighted_layers: boolean to indicate whether you are weighting the hidden states
     :return preds: model predictions
     :return targets: model targets (actual values)
     """
@@ -376,13 +392,17 @@ def eval_loop(model, dataloader_eval, exp_dir, cloud=False, cloud_dir=None, buck
             x = x.to(device)
             targets = batch['targets']
             targets = targets.to(device)
-            o = model(x, layer=layer)
+            if weighted_layers:
+                o = model.weighted_forward(x)
+            else:
+                o = model(x, layer=layer)
             outputs.append(o)
             t.append(targets)
 
     outputs = torch.cat(outputs).cpu().detach()
     t = torch.cat(t).cpu().detach()
     # SAVE PREDICTIONS AND TARGETS 
+    print('Saving predictions')
     pred_path = os.path.join(exp_dir, 'predictions.pt')
     target_path = os.path.join(exp_dir, 'targets.pt')
     torch.save(outputs, pred_path)
@@ -416,7 +436,7 @@ def embedding_loop(model, dataloader,embedding_type='ft',layer=-1):
         for batch in tqdm(dataloader):
             x = torch.squeeze(batch['waveform'], dim=1)
             x = x.to(device)
-            e = model.extract_embeddings(x, embedding_type,layer=layer)
+            e = model.extract_embedding(x, embedding_type,layer=layer)
             e = e.cpu().numpy()
             if embeddings.size == 0:
                 embeddings = e
@@ -467,7 +487,7 @@ def get_embeddings(args):
     dataloader = DataLoader(waveform_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
     
     # (4) set up embedding model
-    model = Wav2Vec2ForSpeechClassification(model_args.checkpoint, model_args.pooling_mode, model_args.n_class,args.freeze, activation='relu', dropout=0.25, layernorm=False) #should look like the finetuned model (so using model_args). If pretrained model, will resort to current args
+    model = Wav2Vec2ForSpeechClassification(model_args.checkpoint, model_args.pooling_mode, model_args.n_class,model_args.freeze, model_args.activation, model_args.final_dropout, model_args.layernorm, model_args.rand_weights) #should look like the finetuned model (so using model_args). If pretrained model, will resort to current args
     
     if args.finetuned_mdl_path is not None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -483,22 +503,25 @@ def get_embeddings(args):
     df_embed = pd.DataFrame([[r] for r in embeddings], columns = ['embedding'], index=annotations_df.index)
 
     try:
-        if args.finetuned_mdl_path is not None:
-            args.finetuned_mdl_path = args.finetuned_mdl_path.replace(os.path.commonprefix([args.dataset, os.path.basename(args.finetuned_mdl_path)]), '')
-            pqt_path = '{}/{}_{}_{}_embeddings.pqt'.format(args.exp_dir, args.dataset, os.path.basename(args.finetuned_mdl_path)[:-3], args.embedding_type) #TODO: can mess with naming conventions later
-        else:
-            pqt_path = '{}/{}_{}_{}_embeddings.pqt'.format(args.exp_dir, args.dataset, os.path.basename(args.checkpoint), args.embedding_type) #TODO: can mess with naming conventions later
+        pqt_path = '{}/{}_{}_embeddings.pqt'.format(args.exp_dir, args.dataset, args.embedding_type)
+        
+        # if args.finetuned_mdl_path is not None:
+        #     args.finetuned_mdl_path = args.finetuned_mdl_path.replace(os.path.commonprefix([args.dataset, os.path.basename(args.finetuned_mdl_path)]), '')
+        #     pqt_path = '{}/{}_{}_{}_embeddings.pqt'.format(args.exp_dir, args.dataset, os.path.basename(args.finetuned_mdl_path)[:-3], args.embedding_type) #TODO: can mess with naming conventions later
+        # else:
+        #     pqt_path = '{}/{}_{}_{}_embeddings.pqt'.format(args.exp_dir, args.dataset, os.path.basename(args.checkpoint), args.embedding_type) #TODO: can mess with naming conventions later
         df_embed.to_parquet(path=pqt_path, index=True, engine='pyarrow') #TODO: fix
 
         if args.cloud:
             upload(args.cloud_dir, pqt_path, args.bucket)
     except:
         print('Unable to save as pqt, saving instead as csv')
-        if args.finetuned_mdl_path is not None:
-            args.finetuned_mdl_path = args.finetuned_mdl_path.replace(os.path.commonprefix([args.dataset, os.path.basename(args.finetuned_mdl_path)]), '')
-            csv_path = '{}/{}_{}_{}_embeddings.csv'.format(args.exp_dir, args.dataset, os.path.basename(args.finetuned_mdl_path)[:-3], args.embedding_type)
-        else:
-            csv_path = '{}/{}_{}_{}_embeddings.csv'.format(args.exp_dir, args.dataset, os.path.basename(args.checkpoint), args.embedding_type)
+        csv_path = '{}/{}_{}_embeddings.csv'.format(args.exp_dir, args.dataset, args.embedding_type)
+        # if args.finetuned_mdl_path is not None:
+        #     args.finetuned_mdl_path = args.finetuned_mdl_path.replace(os.path.commonprefix([args.dataset, os.path.basename(args.finetuned_mdl_path)]), '')
+        #     csv_path = '{}/{}_{}_{}_embeddings.csv'.format(args.exp_dir, args.dataset, os.path.basename(args.finetuned_mdl_path)[:-3], args.embedding_type)
+        # else:
+        #     csv_path = '{}/{}_{}_{}_embeddings.csv'.format(args.exp_dir, args.dataset, os.path.basename(args.checkpoint), args.embedding_type)
         df_embed.to_csv(csv_path, index=True)
 
         if args.cloud:
@@ -536,13 +559,13 @@ def finetuning(args):
     #dataloader_test = DataLoader(dataset_test, batch_size = len(diag_test), shuffle = False, num_workers = args.num_workers)
 
     # (4) initialize model
-    model = Wav2Vec2ForSpeechClassification(args.checkpoint, args.pooling_mode, args.n_class, args.freeze, activation='relu', dropout=0.25, layernorm=False)    
+    model = Wav2Vec2ForSpeechClassification(args.checkpoint, args.pooling_mode, args.n_class, args.freeze, args.activation, args.final_dropout, args.layernorm, args.rand_weights)    
     
     # (5) start fine-tuning classification
-    model = train_loop(args, model, dataloader_train, dataloader_val, args.layer)
+    model = train_loop(args, model, dataloader_train, dataloader_val)
 
     # (6) start evaluating
-    preds, targets = eval_loop(model, dataloader_test, args.exp_dir, args.cloud, args.cloud_dir, args.bucket, args.layer)
+    preds, targets = eval_loop(model, dataloader_test, args.exp_dir, args.cloud, args.cloud_dir, args.bucket, args.layer, args.weighted_layers)
 
     print('Finetuning finished')
 
@@ -575,7 +598,7 @@ def eval_only(args):
     #dataloader_test = DataLoader(dataset_test, batch_size = len(diag_test), shuffle = False, num_workers = args.num_workers)
 
     # (4) initialize model
-    model = Wav2Vec2ForSpeechClassification(model_args.checkpoint, model_args.pooling_mode, model_args.n_class, args.freeze)
+    model = Wav2Vec2ForSpeechClassification(model_args.checkpoint, model_args.pooling_mode, model_args.n_class, model_args.freeze, model_args.activation, model_args.final_dropout, model_args.layernorm, model_args.rand_weights)
 
     if args.finetuned_mdl_path is not None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -585,7 +608,9 @@ def eval_only(args):
         print(f'Evaluating only a pretrained model: {args.pretrained_mdl_path}')
 
     # (6) start evaluating
-    preds, targets = eval_loop(model, dataloader_eval, args.exp_dir, args.cloud, args.cloud_dir, args.bucket, args.layer)
+    preds, targets = eval_loop(model, dataloader_eval, args.exp_dir, args.cloud, args.cloud_dir, args.bucket, args.layer, args.weighted_layers)
+
+    print('Evaluation finished')
 
     # (7) performance metrics
     #metrics(args, preds, targets)
@@ -598,19 +623,21 @@ def main():
     parser.add_argument("-d", "--data_split_root", default='gs://ml-e107-phi-shared-aif-us-p/speech_ai/share/data_splits/amr_subject_dedup_594_train_100_test_binarized_v20220620/test.csv', help="specify file path where datasplit is located. If you give a full file path to classification, an error will be thrown. On the other hand, evaluation and embedding expects a single .csv file.")
     parser.add_argument('-l','--label_txt', default='./labels.txt')
     parser.add_argument('--lib', default=False, type=bool, help="Specify whether to load using librosa as compared to torch audio")
+    parser.add_argument("-c", "--checkpoint", default="gs://ml-e107-phi-shared-aif-us-p/m144443/checkpoints/wav2vec2-base-960h", help="specify path to pre-trained model weight checkpoint")
+    parser.add_argument("-mp", "--finetuned_mdl_path", default='gs://ml-e107-phi-shared-aif-us-p/m144443/temp_out/w2v2_ft_weighted/amr_subject_dedup_594_train_100_test_binarized_v20220620_6_adam_epochwav2vec2-base-960h_1_mdl_weighted.pt', help='If running eval-only or extraction, you have the option to load a fine-tuned model by specifying the save path here. If passed a gs:// file, will download to local machine.')
     #GCS
     parser.add_argument('-b','--bucket_name', default='ml-e107-phi-shared-aif-us-p', help="google cloud storage bucket name")
     parser.add_argument('-p','--project_name', default='ml-mps-aif-afdgpet01-p-6827', help='google cloud platform project name')
-    parser.add_argument('--cloud', default=False, type=bool, help="Specify whether to save everything to cloud")
+    parser.add_argument('--cloud', default=True, type=bool, help="Specify whether to save everything to cloud")
     #output
     parser.add_argument("--dataset", default=None,type=str, help="When saving, the dataset arg is used to set file names. If you do not specify, it will assume the lowest directory from data_split_root")
-    parser.add_argument("-o", "--exp_dir", default="./experiments2", help='specify LOCAL output directory')
-    parser.add_argument('--cloud_dir', default='m144443/temp_out/w2v2_ft_debug', type=str, help="if saving to the cloud, you can specify a specific place to save to in the CLOUD bucket")
+    parser.add_argument("-o", "--exp_dir", default="./experiments_weighted/eval", help='specify LOCAL output directory')
+    parser.add_argument('--cloud_dir', default='m144443/temp_out/w2v2_ft_weighted', type=str, help="if saving to the cloud, you can specify a specific place to save to in the CLOUD bucket")
     #Mode specific
     parser.add_argument("-m", "--mode", choices=['finetune','eval','extraction'], default='extraction')
+    parser.add_argument("--weighted_layers", type=bool, default=False, help="specify whether to learn a weighted sum of layers for classification")
+    parser.add_argument("--rand_weights", type=bool, default=False, help="specify whether to randomize weights for initializing hidden state weighted sum")
     parser.add_argument("--freeze", type=bool, default=True, help='specify whether to freeze the base model')
-    parser.add_argument("-c", "--checkpoint", default="gs://ml-e107-phi-shared-aif-us-p/m144443/checkpoints/wav2vec2-base-960h", help="specify path to pre-trained model weight checkpoint")
-    parser.add_argument("-mp", "--finetuned_mdl_path", default='gs://ml-e107-phi-shared-aif-us-p/m144443/temp_out/amr_subject_dedup_594_train_100_test_binarized_v20220620_epoch1_w2v2_mdl.pt', help='If running eval-only or extraction, you have the option to load a fine-tuned model by specifying the save path here. If passed a gs:// file, will download to local machine.')
     parser.add_argument('--embedding_type', type=str, default='pt', help='specify whether embeddings should be extracted from classification head (ft) or base pretrained model (pt)', choices=['ft','pt'])
     #Audio transforms
     parser.add_argument("--resample_rate", default=16000,type=int, help='resample rate for audio files')
@@ -628,6 +655,10 @@ def main():
     parser.add_argument("--loss", type=str, default="BCE", help="the loss function for finetuning, depend on the task", choices=["MSE", "BCE"])
     parser.add_argument("--scheduler", type=str, default=None, help="specify lr scheduler", choices=["onecycle", None])
     parser.add_argument("--max_lr", type=float, default=0.01, help="specify max lr for lr scheduler")
+    #classification head parameters
+    parser.add_argument("--activation", type=str, default='relu', help="specify activation function to use for classification head")
+    parser.add_argument("--final_dropout", type=float, default=0.25, help="specify dropout probability for final dropout layer in classification head")
+    parser.add_argument("--layernorm", type=bool, default=False, help="specify whether to include the LayerNorm in classification head")
     #OTHER
     parser.add_argument("--debug", default=True, type=bool)
     args = parser.parse_args()

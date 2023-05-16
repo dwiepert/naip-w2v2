@@ -38,6 +38,21 @@ In order to initialize a wav2vec 2.0 model, you must have access to a pretrained
 
 3. Use a model checkpoint saved in a GCS bucket. This option can be specified by giving a full file path starting with `gs://BUCKET_NAME/...`. The code will then download this checkpoint locally and reset the checkpoint path to the path it is saved locally. 
 
+## Data structure
+This code will only function with the following data structure.
+SPEECH DATA DIR
+    |
+    -- UID 
+        |
+        -- waveform.EXT (extension can be any audio file extension)
+        -- metadata.json (containing the key 'encoding' (with the extension in capital letters, i.e. mp3 as MP3), also containing the key 'sample_rate_hz' with the full sample rate)
+
+and for the data splits
+DATA SPLIT DIR
+    |
+    -- train.csv
+    -- test.csv
+
 ## Arguments
 There are many possible arguments to set, including all the parameters associated with audio configuration. The main run function describes most of these, and you can alter defaults as required. 
 
@@ -47,6 +62,8 @@ There are many possible arguments to set, including all the parameters associate
 * `-d, --data_split_root`: sets the `data_split_root` directory or a full path to a single csv file. For classification, it must be  a directory containing a train.csv and test.csv of file names. If runnning embedding extraction, it should be a csv file. Running evaluation only can accept either a directory or a csv file. This path should include 'gs://' if it is located in a bucket. 
 * `-l, --label_txt`: sets the `label_txt` path. This is a full file path to a .txt file contain a list of the target labels for selection (see [labels.txt](https://github.com/dwiepert/mayo-ssast/blob/main/labels.txt))
 * `--lib`: : specifies whether to load using librosa (True) or torchaudio (False), default=False
+* `-c, --checkpoint`: specify a pretrained model checkpoint - this is a base model from w2v2, as mentioned earlier. Default is 'facebook/wav2vec2-base-960h' which is a base model trained on 960h of Librispeech. This is required regardless of whether you include a fine-tuned model path. 
+* `-mp, --finetuned_mdl_path`: if running eval-only or extraction, you can specify a fine-tuned model to load in. This can either be a local path of a 'gs://' path, that latter of which will trigger the code to download the specified model path to the local machine. 
 
 ### Google cloud storage
 * `-b, --bucket_name`: sets the `bucket_name` for GCS loading. Required if loading from cloud.
@@ -61,8 +78,8 @@ There are many possible arguments to set, including all the parameters associate
 ### Run mode
 * `-m, --mode`: Specify the mode you are running, i.e., whether to run fine-tuning for classification ('finetune'), evaluation only ('eval-only'), or embedding extraction ('extraction'). Default is 'finetune'.
 * `--freeze`: boolean to specify whether to freeze the base model
-* `-c, --checkpoint`: specify a pretrained model checkpoint - this is a base model from w2v2, as mentioned earlier. Default is 'facebook/wav2vec2-base-960h' which is a base model trained on 960h of Librispeech. This is required regardless of whether you include a fine-tuned model path. 
-* `-mp, --finetuned_mdl_path`: if running eval-only or extraction, you can specify a fine-tuned model to load in. This can either be a local path of a 'gs://' path, that latter of which will trigger the code to download the specified model path to the local machine. 
+* `--weighted_layer`: boolean to trigger weighted_layers mode
+* `--rand_weight`: boolean to specify whether to randomize weights for initializing hidden state weighted sum
 * `--embedding_type`: specify whether embeddings should be extracted from classification head (ft) or base pretrained model (pt)
 
 ### Audio transforms
@@ -83,6 +100,11 @@ There are many possible arguments to set, including all the parameters associate
 * `--scheduler`: specify a lr scheduler. If None, no lr scheduler will be use. The only scheduler option is 'onecycle', which initializes `torch.optim.lr_scheduler.OneCycleLR`
 * `--max_lr`: specify the max learning rate for an lr scheduler. Default is 0.01.
 
+### Classification Head parameters
+* `--activation`: specify activation function to use for classification head
+* `--final_dropout`: specify dropout probability for final dropout layer in classification head
+* `--layernorm`: specify whether to include the LayerNorm in classification head
+
 For more information on arguments, you can also run `python run.py -h`. 
 
 ## Embedding Extraction
@@ -90,5 +112,11 @@ Embedding extraction is now a function within the wrapped Wav2Vec2 model `Wav2Ve
 
 We also have an option to extract embeddings from different hidden states by altering the `layer` argument, which takes an int between -1 and 12. 
 
+## Weighted layers mode
+For a specific form of training, we created an additional parameter for learning weights for all the hidden model layers. This mode will calculate the weighted sum of hidden states before feeding it to the classifier. 
+
+To trigger this mode, set `--weighted_layers` to True. This mode has not been implemented in the notebook. 
+'
+Can access the weights after training with `model_name.weightsum`
 
 

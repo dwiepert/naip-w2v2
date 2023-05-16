@@ -66,11 +66,16 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
         Initialize with a HuggingFace checkpoint (string path), pooling mode (mean, sum, max), and number of classes (num_labels)
     Source: https://colab.research.google.com/github/m3hrdadfi/soxan/blob/main/notebooks/Eating_Sound_Collection_using_Wav2Vec2.ipynb#scrollTo=Fv62ShDsH5DZ
     """
-    def __init__(self, checkpoint, pooling_mode, num_labels, freeze=True, activation='relu', dropout=0.25, layernorm=False):
+    def __init__(self, checkpoint, pooling_mode, num_labels, freeze=True, activation='relu', dropout=0.25, layernorm=False, rand_weights=False):
         """
         :param checkpoint: path to where model checkpoint is saved (str)
         :param pooling_mode: specify which method of pooling from ['mean', 'sum', 'max'] (str)
         :param num_labels: specify number of categories to classify
+        :param freeze: specify whether to freeze the pretrained model parameters
+        :param activation: activation function for classification head
+        :param final_dropout: amount of dropout to use in classification head
+        :param layernorm: include layer normalization in classification head
+        :param rand_weight: specify whether to randomize weights
         """
         super(Wav2Vec2ForSpeechClassification, self).__init__()
         self.num_labels = num_labels
@@ -83,33 +88,43 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
             for param in self.model.parameters():
                 param.requires_grad = False
 
+        #if weighting each layer for classification, set up a random vector of size # hidden states (13)
+        if rand_weights:
+            self.weightsum=nn.Parameter(torch.rand(13))
+        else:
+            self.weightsum=nn.Parameter(torch.ones(13)/13)
+
         self.classifier = ClassificationHead(768,self.num_labels,activation=activation, final_dropout=dropout,layernorm=layernorm)
+
+
         
 
     def merged_strategy(
             self,
             hidden_states,
-            mode="mean"
+            mode="mean",
+            reduce_dim = 1
     ):
         """
         Set up pooling method to reduce hidden state dimension
         :param hidden_states: output from last hidden states layer
         :param mode: pooling method (str, default="mean")
+        :param reduce_dim: dimension to merge on. It will be 1 in almost all cases except when calling mat_mul_weights
         :return outputs: hidden_state pooled to reduce dimension
         """
         if mode == "mean":
-            outputs = torch.mean(hidden_states, dim=1)
+            outputs = torch.mean(hidden_states, dim=reduce_dim)
         elif mode == "sum":
-            outputs = torch.sum(hidden_states, dim=1)
+            outputs = torch.sum(hidden_states, dim=reduce_dim)
         elif mode == "max":
-            outputs = torch.max(hidden_states, dim=1)[0]
+            outputs = torch.max(hidden_states, dim=reduce_dim)[0]
         else:
             raise Exception(
                 "The pooling method hasn't been defined! Your pooling mode must be one of these ['mean', 'sum', 'max']")
 
         return outputs
 
-    def extract_embeddings(self, x, 
+    def extract_embedding(self, x, 
                               embedding_type='ft',
                               layer=-1, 
                               attention_mask=None):
@@ -143,7 +158,44 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
         
         return e
     
-    
+    def mat_mul_weights(self, weightsum, hidden_states):
+        """
+        Pool each hiddenstate and set up weighted sum
+        :param weightsum:
+        :param hidden_states: hidden w2v2 states of size (batch, hidden_state_dim, 768)
+        """
+        #one layer hidden state size = batch size x 499 x 768
+        hidden = self.merged_strategy(torch.stack(hidden_states), mode=self.pooling_mode, reduce_dim=2)
+        #after pooling, shape is = # hidden layers x batch size x 768
+        hidden = torch.permute(hidden, (1,0,2)) #permute the shape so it is batch size x # hidden layers x 768
+        w_sum = torch.reshape(weightsum,(1,1,13)) #reshape weight sum to have the right number of dims
+        w_sum=w_sum.repeat(hidden.shape[0],1,1) #repeat for each sample in batch to allow for batch matrix product, results in size #batch size x 1 x 13
+        weighted_sum=torch.bmm(w_sum, hidden) #output: batch size x 1 x 768
+
+        return torch.squeeze(weighted_sum, dim=1) #need to squeeze at output going into classifier should be batch size x 768 
+
+
+    def weighted_forward(self,
+                     input_values,
+                     attention_mask=None):
+        """
+        Run model with weighted layers
+        :param input_values: input values to the model (batch_size, input_size)
+        :param attention_mask: give attention mask to model (default=None)
+        :return logits: classifier output (batch_size, num_labels)
+        """
+        outputs = self.model(
+            input_values,
+            attention_mask=attention_mask
+        )
+        #one layer hidden state size = batch size x 499 x 768
+        hidden_states = self.mat_mul_weights(self.weightsum, outputs['hidden_states'])
+        #comes out of mat_mul_weights as batch_size x 768
+        logits = self.classifier(hidden_states)
+
+        return logits
+
+        
     def forward(
             self,
             input_values,

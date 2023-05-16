@@ -47,8 +47,11 @@ class ClassificationHead(nn.Module):
         """
         Create a classification head with a dense layer, relu activation, a dropout layer, and final classification layer
         :param hiden_size: size of input to classification head - equivalent to the last hidden layer size in the Wav2Vec 2.0 model (int)
-        :param final_dropout: specify amount of dropout
+        :param output_size: number of categories for classification output
         :param num_labels: specify number of categories to classify
+        :param activation: activation function for classification head
+        :param final_dropout: amount of dropout to use in classification head
+        :param layernorm: include layer normalization in classification head
         """
         super().__init__()
         self.input_size = input_size
@@ -164,6 +167,7 @@ def load_waveform_from_gcs(bucket, gcs_prefix, uid, extension = None, lib=False)
     gcs_metadata_path = f'{gcs_prefix}/{uid}/metadata.json'
     
     metadata_blob = bucket.blob(gcs_metadata_path)
+    
     metadata = json.loads(metadata_blob.download_as_string())
     
     if extension is None:
