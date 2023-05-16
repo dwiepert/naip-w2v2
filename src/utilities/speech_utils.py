@@ -62,11 +62,11 @@ class ClassificationHead(nn.Module):
 
         classifier = []
         key = []
+        classifier.append(nn.Linear(self.input_size, self.input_size) )
+        key.append('dense')
         if self.layernorm:
             classifier.append(nn.LayerNorm(self.input_size))
             key.append('norm')
-        classifier.append(nn.Linear(self.input_size, self.input_size) )
-        key.append('dense')
         if self.activation == 'relu':
             classifier.append(nn.ReLU())
             key.append('relu')
