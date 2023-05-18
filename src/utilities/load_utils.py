@@ -172,8 +172,11 @@ def load_data(data_split_root, exp_dir, cloud, cloud_dir, bucket):
         upload(cloud_dir, val_path, bucket)
 
     #alter data columns
-    train_df["distortions"]=((train_df["distorted Cs"]+train_df["distorted V"])>0).astype(int)
-    val_df["distortions"]=((val_df["distorted Cs"]+val_df["distorted V"])>0).astype(int)
-    test_df["distortions"]=((test_df["distorted Cs"]+test_df["distorted V"])>0).astype(int)
+    if 'distortions' not in train_df.columns:
+        train_df["distortions"]=((train_df["distorted Cs"]+train_df["distorted V"])>0).astype(int)
+    if 'distortions' not in val_df.columns:
+        val_df["distortions"]=((val_df["distorted Cs"]+val_df["distorted V"])>0).astype(int)
+    if 'distortions' not in test_df.columns:
+        test_df["distortions"]=((test_df["distorted Cs"]+test_df["distorted V"])>0).astype(int)
 
     return train_df, val_df, test_df

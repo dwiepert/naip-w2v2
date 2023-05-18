@@ -40,7 +40,8 @@ def get_embeddings(args):
     # (1) load data to get embeddings for
     assert '.csv' in args.data_split_root, f'A csv file is necessary for embedding extraction. Please make sure this is a full file path: {args.data_split_root}'
     annotations_df = pd.read_csv(args.data_split_root, index_col = 'uid') #data_split_root should use the CURRENT arguments regardless of the finetuned model
-    annotations_df["distortions"]=((annotations_df["distorted Cs"]+annotations_df["distorted V"])>0).astype(int)
+    if 'distortions' not in annotations_df.columns:
+        annotations_df["distortions"]=((annotations_df["distorted Cs"]+annotations_df["distorted V"])>0).astype(int)
 
     if args.debug:
         annotations_df = annotations_df.iloc[0:8,:]
@@ -56,7 +57,7 @@ def get_embeddings(args):
     dataloader = DataLoader(waveform_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
     
     # (4) set up embedding model
-    model = Wav2Vec2ForSpeechClassification(checkpoint=model_args.checkpoint, num_labels = model_args.n_class, pooling_mode = model_args.pooling_mode, 
+    model = Wav2Vec2ForSpeechClassification(checkpoint=model_args.checkpoint, label_dim = model_args.n_class, pooling_mode = model_args.pooling_mode, 
                                             freeze=model_args.freeze, activation=model_args.activation, final_dropout=model_args.final_dropout, 
                                             layernorm=model_args.layernorm, weighted=model_args.weighted, layer=model_args.layer)   #should look like the finetuned model (so using model_args). If pretrained model, will resort to current args
     
@@ -100,7 +101,7 @@ def get_embeddings(args):
     print('Embedding extraction finished')
     return df_embed
 
-def finetuning(args):
+def finetune_w2v2(args):
     """
     Run finetuning from start to finish
     :param args: dict with all the argument values
@@ -134,7 +135,7 @@ def finetuning(args):
     #dataloader_test = DataLoader(dataset_test, batch_size = len(diag_test), shuffle = False, num_workers = args.num_workers)
 
     # (4) initialize model
-    model = Wav2Vec2ForSpeechClassification(checkpoint=args.checkpoint, num_labels = args.n_class, pooling_mode = args.pooling_mode, 
+    model = Wav2Vec2ForSpeechClassification(checkpoint=args.checkpoint, label_dim = args.n_class, pooling_mode = args.pooling_mode, 
                                             freeze=args.freeze, activation=args.activation, final_dropout=args.final_dropout, 
                                             layernorm=args.layernorm, weighted=args.weighted, layer=args.layer)    
     
@@ -175,7 +176,8 @@ def eval_only(args):
    # (1) load data
     if '.csv' in args.data_split_root: 
         eval_df = pd.read_csv(args.data_split_root, index_col = 'uid')
-        eval_df["distortions"]=((eval_df["distorted Cs"]+eval_df["distorted V"])>0).astype(int)
+        if 'distortions' not in eval_df.columns:
+            eval_df["distortions"]=((eval_df["distorted Cs"]+eval_df["distorted V"])>0).astype(int)
     else:
         train_df, val_df, eval_df = load_data(args.data_split_root, args.exp_dir, args.cloud, args.cloud_dir, args.bucket)
     
@@ -194,7 +196,7 @@ def eval_only(args):
     #dataloader_test = DataLoader(dataset_test, batch_size = len(diag_test), shuffle = False, num_workers = args.num_workers)
 
     # (4) initialize model
-    model = Wav2Vec2ForSpeechClassification(checkpoint=model_args.checkpoint, num_labels = model_args.n_class, pooling_mode = model_args.pooling_mode, 
+    model = Wav2Vec2ForSpeechClassification(checkpoint=model_args.checkpoint, label_dim = model_args.n_class, pooling_mode = model_args.pooling_mode, 
                                             freeze=model_args.freeze, activation=model_args.activation, final_dropout=model_args.final_dropout, 
                                             layernorm=model_args.layernorm, weighted=model_args.weighted, layer=model_args.layer)    
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -298,6 +300,7 @@ def main():
             args.batch_size = 1
 
     # (7) check if checkpoint is stored in gcs bucket or confirm it exists on local machine
+    assert checkpoint is not None, 'Must give a model checkpoint for W2V2'
     if args.checkpoint[:5] =='gs://':
         checkpoint = args.checkpoint[5:].replace(args.bucket_name,'')[1:]
         checkpoint = download_dir(checkpoint, bucket)
@@ -319,7 +322,7 @@ def main():
     # (10) run model
     print(args.mode)
     if args.mode == "finetune":
-        finetuning(args)
+        finetune_w2v2(args)
 
     elif args.mode == 'eval':
         eval_only(args)

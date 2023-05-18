@@ -66,12 +66,12 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
         Initialize with a HuggingFace checkpoint (string path), pooling mode (mean, sum, max), and number of classes (num_labels)
     Source: https://colab.research.google.com/github/m3hrdadfi/soxan/blob/main/notebooks/Eating_Sound_Collection_using_Wav2Vec2.ipynb#scrollTo=Fv62ShDsH5DZ
     """
-    def __init__(self, checkpoint, num_labels=5, pooling_mode='mean', 
+    def __init__(self, checkpoint, label_dim=5, pooling_mode='mean', 
                  freeze=True, activation='relu', final_dropout=0.25, layernorm=False, 
                  weighted=False, layer=-1):
         """
         :param checkpoint: path to where model checkpoint is saved (str)
-        :param num_labels: specify number of categories to classify
+        :param label_dim: specify number of categories to classify
         :param pooling_mode: specify which method of pooling from ['mean', 'sum', 'max'] (str)
         :param freeze: specify whether to freeze the pretrained model parameters
         :param activation: activation function for classification head
@@ -81,7 +81,7 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
         :param layer: layer for single hidden layer extraction
         """
         super(Wav2Vec2ForSpeechClassification, self).__init__()
-        self.num_labels = num_labels
+        self.label_dim = label_dim
         self.pooling_mode = pooling_mode
 
         self.model = AutoModelForAudioClassification.from_pretrained(checkpoint,config=AutoConfig.from_pretrained(checkpoint, output_attentions=True,output_hidden_states=True))
@@ -103,7 +103,8 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
         else:
             self.weightsum=torch.ones(self.n_states)/self.n_states
 
-        self.classifier = ClassificationHead(self.embedding_dim,self.num_labels,activation=activation, final_dropout=final_dropout,layernorm=layernorm)
+        self.classifier = ClassificationHead(self.embedding_dim,self.label_dim,
+                                             activation=activation, final_dropout=final_dropout,layernorm=layernorm)
         
     def _get_shape(self):
         """
@@ -234,7 +235,7 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
             e = self._pool(outputs['hidden_states'], pooling_mode, weighted, layer) #pool across the specified layer
 
         else:
-            raise ValueError('Embedding type must be finetune (ft) or pretrain (pt)')
+            raise ValueError('Embedding type must be finetune (ft), pretrain (pt), or weighted sum (wt)')
         
         return e
     

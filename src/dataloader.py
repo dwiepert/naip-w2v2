@@ -72,7 +72,6 @@ class W2V2Dataset(Dataset):
 
         These transformations will always load the audio. 
         :outparam audio_transform: standard transforms
-        :outparam al_transform: albumentation augmentation transforms
         '''
         waveform_loader = UidToWaveform(prefix = self.prefix, bucket=self.bucket, lib=self.lib)
         transform_list = [waveform_loader]
