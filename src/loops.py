@@ -250,3 +250,5 @@ def calc_auc(preds, targets, target_labels,
     data.to_csv(os.path.join(exp_dir, 'aucs.csv'), index=False)
     if cloud:
         upload(cloud_dir, os.path.join(exp_dir, 'aucs.csv'), bucket)
+
+    return data
