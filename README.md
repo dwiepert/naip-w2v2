@@ -165,17 +165,3 @@ Not yet implemented.
 
 
 
-
-## Embedding Extraction
-Embedding extraction is now a function within the wrapped Wav2Vec2 model `Wav2Vec2ForSpeechClassification` model (see `extract_embeddings(...)` in [w2v2_models.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/models/w2v2_models.py)). Notably, this function contains options to extract either the output of the Dense layer from the classification head or the final hidden layer of the base W2V2 model by specifying `embedding_type` as either `ft` for 'finetuned' embedding (extracting from classification head) or `pt` for 'pretrained' embedding (extracting from w2v2 hidden states), on the basis that we generally freeze the base w2v2 model before finetuning. 
-
-We also have an option to extract embeddings from different hidden states by altering the `layer` argument, which takes an int between -1 and 12. 
-
-## Weighted layers mode
-For a specific form of training, we created an additional parameter for learning weights for all the hidden model layers. This mode will calculate the weighted sum of hidden states before feeding it to the classifier. 
-
-To trigger this mode, set `--weighted_layers` to True. This mode has not been implemented in the notebook. 
-'
-Can access the weights after training with `model_name.weightsum`
-
-
