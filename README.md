@@ -50,7 +50,7 @@ SPEECH DATA DIR
         |
 
         -- waveform.EXT (extension can be any audio file extension)
-        
+
         -- metadata.json (containing the key 'encoding' (with the extension in capital letters, i.e. mp3 as MP3), also containing the key 'sample_rate_hz' with the full sample rate)
 
 and for the data splits
@@ -62,6 +62,22 @@ DATA SPLIT DIR
     -- train.csv
 
     -- test.csv
+
+## Audio Configuration
+Data is loaded using an `W2V2Dataset` class, where you pass a dataframe of the file names (UIDs) along with columns containing label data, a list of the target labels (columns to select from the df), specify audio configuration, method of loading, and initialize transforms on the raw waveform and spectrogram (see [dataloader.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/dataloader.py)). 
+
+To specify audio loading method, you can alter the `bucket` variable and `librosa` variable. As a default, `bucket` is set to None, which will force loading from the local machine. If using GCS, pass a fully initialized bucket. Setting the `librosa` value to 'True' will cause the audio to be loaded using librosa rather than torchaudio. 
+
+The audio configuration parameters should be given as a dictionary (which can be seen in [run.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/runpy) and [run.ipynb](https://github.com/dwiepert/mayo-w2v2/blob/main/src/run.ipynb). Most configuration values are for initializing audio and spectrogram transforms. The transform will only be initialized if the value is not 0. If you have a further desire to add transforms, see [speech_utils.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/utilities/speech_utils.py)) and alter [dataloader.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/dataloader.py) accordingly. 
+
+The following parameters are accepted (`--` indicates the command line argument to alter to set it):
+
+*Audio Transform Information*
+* `resample_rate`: an integer value for resampling. Set with `--resample_rate`
+* `reduce`: a boolean indicating whether to reduce audio to monochannel. Set with `--reduce`
+* `clip_length`: integer specifying how many frames the audio should be. Set with `--clip_length`
+* `trim`: boolean specifying whether to trim beginning and end silence. Set with `--trim`
+
 
 ## Arguments
 There are many possible arguments to set, including all the parameters associated with audio configuration. The main run function describes most of these, and you can alter defaults as required. 
@@ -88,18 +104,14 @@ There are many possible arguments to set, including all the parameters associate
 ### Run mode
 * `-m, --mode`: Specify the mode you are running, i.e., whether to run fine-tuning for classification ('finetune'), evaluation only ('eval-only'), or embedding extraction ('extraction'). Default is 'finetune'.
 * `--freeze`: boolean to specify whether to freeze the base model
-* `--weighted_layer`: boolean to trigger weighted_layers mode
-* `--rand_weight`: boolean to specify whether to randomize weights for initializing hidden state weighted sum
+* `--weighted`: boolean to trigger learning weights for hidden states
+* `--layer`: Specify which model layer (hidden state) output to use. Default is -1 which is the final layer. 
 * `--embedding_type`: specify whether embeddings should be extracted from classification head (ft) or base pretrained model (pt)
 
 ### Audio transforms
-* `--resample_rate`: an integer value for resampling. Default to 16000
-* `--reduce`: a boolean indicating whether to reduce audio to monochannel. Default to True.
-* `--clip_length`: integer specifying how many frames the audio should be. Default to 160000.
-* `--trim`: boolean indicating whether to trim silence. Default to False.
+see the audio configurations section for which arguments to set
 
 ### Model parameters
-* `--layer`:  specify which hidden state is being used. It can be between -1 and 12.
 * `-pm, --pooling_mode`: specify method of pooling the last hidden layer for embedding extraction. Options are 'mean', 'sum', 'max'.
 * `-bs, --batch_size`: set the batch size (default 8)
 * `-nw, --num_workers`: set number of workers for dataloader (default 0)
@@ -116,6 +128,43 @@ There are many possible arguments to set, including all the parameters associate
 * `--layernorm`: specify whether to include the LayerNorm in classification head
 
 For more information on arguments, you can also run `python run.py -h`. 
+
+## Functionality
+This implementation contains many functionality options as listed below:
+
+### 1. Finetuning
+You can finetune W2V2 for classifying speech features using the `W2V2ForSpeechClassification` class in [w2v2_models.py]((https://github.com/dwiepert/mayo-w2v2/blob/main/src/models/w2v2_models.py) and the `finetune(...)` function in [loops.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/loops.py). 
+
+This mode is triggered by setting `-m, --mode` to 'finetune' and also specifying which pooling method to use to pool the hidden dim with `--pm, --pooling_mode`. The options are 'mean', 'sum', and 'max'.
+
+There are a few different parameters to consider. Firstly, the classification head can be altered to use a different amount of dropout and to include/exclude layernorm. See `ClassificationHead` class in [speech_utils.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/utilities/speech_utils.py) for more information. 
+
+Default run mode will also freeze the base W2V2 model and only finetune the classification head. This can be altered with `--freeze`. 
+
+We also include the option to use a different hidden state output as the input to the classification head. This can be specified with `--layer` and must be an integer between 0 and `model.n_states` (or -1 to get the final layer). This works in the `W2V2ForSpeechClassification` class by getting a list of hidden states and indexing using the `layer` parameter. 
+
+Finally, we added functionality to train an additional parameter to learn weights for the contribution of each hidden state to classification. The weights can be accessed with `model.weightsum`. This mode is triggered by setting `--weighted` to True. If initializing a model outside of the run function, it is still triggered with an argument called `weighted`. 
+
+### 2. Evaluation only
+If you have a finetuned model and want to evaluate it on a new data set, you can do so by setting `-m, --mode` to 'eval'. You must then also specify a `-mp, --finetuned_mdl_path` to load in. 
+
+It is expected that there is an `args.pkl` file in the same directory as the finetuned model to indicate which arguments were used to initialize the finetuned model. This implementation will load the arguments and initialize/load the finetuned model with these arguments. If no such file exists, it will use the arguments from the current run, which could be incompatible if you are not careful. 
+
+### 3. Embedding extraction.
+We implemented multiple embedding extraction methods for use with the SSAST model. The implementation is a function within `W2V2ForSpeechClassification` called `extract_embedding(x, embedding_type, layer, pooling_mode, ...)`, which is called on batches instead of the forward function. 
+
+Embedding extraction is triggered by setting `-m, --mode` to 'extraction'. 
+
+You must also consider where you want the embeddings to be extracted from. The options are as follows:
+1. From the output of a hidden state? Set `embedding_type` to 'pt'. Can further set an exact hidden state with the `layer` argument. By default, it will use the layer specified at the time of model initialization. The model default is to give the last hidden state run through a normalization layer, so the embedding is this output merged to be of size (batch size, embedding_dim). It will also automatically use the merging strategy defined by the mode set at the time of model initialization, but this can be changed at the time of embedding extraction by redefining `pooling_mode`.
+2. After weighting the hidden states? Set `embedding_type` to 'wt'. This version requires that the model was initially finetuned with  `weighted` set to True.
+3. From a layer in the classification head that has been finetuned? Set `embedding_type` to 'ft'. This version requires no further specification and will always return the output from the first dense layer in the classification head, prior to any activation function or normalization. 
+
+## Visualize Attention
+Not yet implemented. 
+
+
+
 
 ## Embedding Extraction
 Embedding extraction is now a function within the wrapped Wav2Vec2 model `Wav2Vec2ForSpeechClassification` model (see `extract_embeddings(...)` in [w2v2_models.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/models/w2v2_models.py)). Notably, this function contains options to extract either the output of the Dense layer from the classification head or the final hidden layer of the base W2V2 model by specifying `embedding_type` as either `ft` for 'finetuned' embedding (extracting from classification head) or `pt` for 'pretrained' embedding (extracting from w2v2 hidden states), on the basis that we generally freeze the base w2v2 model before finetuning. 
