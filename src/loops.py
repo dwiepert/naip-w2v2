@@ -241,7 +241,8 @@ def calc_auc(preds, targets, target_labels,
     :param targets: model targets (actual values)
     """
     #get AUC score and all data for ROC curve
-    metrics = {}
+    preds = preds[targets.isnan().sum(1)==0]
+    targets[targets.isnan().sum(1)==0]
     pred_mat=torch.sigmoid(preds).numpy()
     target_mat=targets.numpy()
     aucs=roc_auc_score(target_mat, pred_mat, average = None) #TODO: this doesn't work when there is an array with all labels as 0???

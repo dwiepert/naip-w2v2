@@ -35,7 +35,11 @@ def get_embeddings(args):
     """
     print('Running Embedding Extraction: ')
     # Get original 
-    model_args, args.finetuned_mdl_path = setup_mdl_args(args)
+    if args.finetuned_mdl_path is not None:
+        model_args, args.finetuned_mdl_path = setup_mdl_args(args, args.finetuned_mdl_path)
+    else:
+        model_args, args.checkpoint = setup_mdl_args(args, args.checkpoint)
+
 
     # (1) load data to get embeddings for
     assert '.csv' in args.data_split_root, f'A csv file is necessary for embedding extraction. Please make sure this is a full file path: {args.data_split_root}'
@@ -109,7 +113,7 @@ def finetune_w2v2(args):
     print('Running finetuning: ')
     # (1) load data
     assert '.csv' not in args.data_split_root, f'May have given a full file path, please confirm this is a directory: {args.data_split_root}'
-    train_df, val_df, test_df = load_data(args.data_split_root, args.exp_dir, args.cloud, args.cloud_dir, args.bucket)
+    train_df, val_df, test_df = load_data(args.data_split_root, args.target_labels, args.exp_dir, args.cloud, args.cloud_dir, args.bucket)
 
     if args.debug:
         train_df = train_df.iloc[0:8,:]
@@ -171,15 +175,16 @@ def eval_only(args):
     """
     assert args.finetuned_mdl_path is not None, 'Evaluation must be run on a finetuned model, otherwise classification head is completely untrained.'
     # get original model args (or if no finetuned model, uses your original args)
-    model_args, args.finetuned_mdl_path = setup_mdl_args(args)
+    model_args, args.finetuned_mdl_path = setup_mdl_args(args, args.finetuned_mdl_path)
     
    # (1) load data
     if '.csv' in args.data_split_root: 
         eval_df = pd.read_csv(args.data_split_root, index_col = 'uid')
         if 'distortions' not in eval_df.columns:
             eval_df["distortions"]=((eval_df["distorted Cs"]+eval_df["distorted V"])>0).astype(int)
+        eval_df = eval_df.dropna(subset=args.target_labels)
     else:
-        train_df, val_df, eval_df = load_data(args.data_split_root, args.exp_dir, args.cloud, args.cloud_dir, args.bucket)
+        train_df, val_df, eval_df = load_data(args.data_split_root, args.target_labels, args.exp_dir, args.cloud, args.cloud_dir, args.bucket)
     
     if args.debug:
         eval_df = eval_df.iloc[0:8,:]
@@ -214,22 +219,22 @@ def main():
     #Inputs
     parser.add_argument('-i','--prefix',default='speech_ai/speech_lake/', help='Input directory or location in google cloud storage bucket containing files to load')
     parser.add_argument("-s", "--study", choices = ['r01_prelim','speech_poc_freeze_1', None], default='speech_poc_freeze_1', help="specify study name")
-    parser.add_argument("-d", "--data_split_root", default='gs://ml-e107-phi-shared-aif-us-p/speech_ai/share/data_splits/amr_subject_dedup_594_train_100_test_binarized_v20220620/test.csv', help="specify file path where datasplit is located. If you give a full file path to classification, an error will be thrown. On the other hand, evaluation and embedding expects a single .csv file.")
+    parser.add_argument("-d", "--data_split_root", default='gs://ml-e107-phi-shared-aif-us-p/speech_ai/share/data_splits/amr_subject_dedup_594_train_100_test_binarized_v20220620', help="specify file path where datasplit is located. If you give a full file path to classification, an error will be thrown. On the other hand, evaluation and embedding expects a single .csv file.")
     parser.add_argument('-l','--label_txt', default='./labels.txt')
     parser.add_argument('--lib', default=False, type=bool, help="Specify whether to load using librosa as compared to torch audio")
     parser.add_argument("-c", "--checkpoint", default="gs://ml-e107-phi-shared-aif-us-p/m144443/checkpoints/wav2vec2-base-960h", help="specify path to pre-trained model weight checkpoint")
-    parser.add_argument("-mp", "--finetuned_mdl_path", default='/Users/m144443/Documents/GitHub/mayo-w2v2/experiments/weighted/amr_subject_dedup_594_train_100_test_binarized_v20220620_5_adam_epoch1_wav2vec2-base-960h_mdl_weighted.pt', help='If running eval-only or extraction, you have the option to load a fine-tuned model by specifying the save path here. If passed a gs:// file, will download to local machine.')
+    parser.add_argument("-mp", "--finetuned_mdl_path", default='gs://ml-e107-phi-shared-aif-us-p/m144443/temp_out/w2v2_ft/amr_subject_dedup_594_train_100_test_binarized_v20220620_6_adam_epochwav2vec2-base-960h_1_mdl.pt', help='If running eval-only or extraction, you have the option to load a fine-tuned model by specifying the save path here. If passed a gs:// file, will download to local machine.')
     #GCS
     parser.add_argument('-b','--bucket_name', default='ml-e107-phi-shared-aif-us-p', help="google cloud storage bucket name")
     parser.add_argument('-p','--project_name', default='ml-mps-aif-afdgpet01-p-6827', help='google cloud platform project name')
     parser.add_argument('--cloud', default=False, type=bool, help="Specify whether to save everything to cloud")
     #output
     parser.add_argument("--dataset", default=None,type=str, help="When saving, the dataset arg is used to set file names. If you do not specify, it will assume the lowest directory from data_split_root")
-    parser.add_argument("-o", "--exp_dir", default="./experiments/embeddings", help='specify LOCAL output directory')
+    parser.add_argument("-o", "--exp_dir", default="./experiments/eval2", help='specify LOCAL output directory')
     parser.add_argument('--cloud_dir', default='m144443/temp_out/w2v2_ft_weighted', type=str, help="if saving to the cloud, you can specify a specific place to save to in the CLOUD bucket")
     #Mode specific
-    parser.add_argument("-m", "--mode", choices=['finetune','eval','extraction'], default='extraction')
-    parser.add_argument("--weighted", type=bool, default=True, help="specify whether to learn a weighted sum of layers for classification")
+    parser.add_argument("-m", "--mode", choices=['finetune','eval','extraction'], default='eval')
+    parser.add_argument("--weighted", type=bool, default=False, help="specify whether to learn a weighted sum of layers for classification")
     parser.add_argument("--layer", default=-1, type=int, help="specify which hidden state is being used. It can be between -1 and 12")
     parser.add_argument("--freeze", type=bool, default=True, help='specify whether to freeze the base model')
     parser.add_argument('--embedding_type', type=str, default='wt', help='specify whether embeddings should be extracted from classification head (ft) or base pretrained model (pt)', choices=['ft','pt'])
@@ -298,24 +303,16 @@ def main():
             assert args.batch_size == 1, 'Not currently compatible with different length wav files unless batch size has been set to 1'
         except:
             args.batch_size = 1
-
-    # (7) check if checkpoint is stored in gcs bucket or confirm it exists on local machine
-    assert checkpoint is not None, 'Must give a model checkpoint for W2V2'
-    if args.checkpoint[:5] =='gs://':
-        checkpoint = args.checkpoint[5:].replace(args.bucket_name,'')[1:]
-        checkpoint = download_dir(checkpoint, bucket)
-        args.checkpoint = checkpoint
-    else:
-        assert os.path.exists(args.checkpoint), 'Current checkpoint does not exist on local machine'
-
-    # (8) dump arguments
+    
+    # (7) dump arguments
     args_path = "%s/args.pkl" % args.exp_dir
     with open(args_path, "wb") as f:
         pickle.dump(args, f)
-    #in case of error, everything is immediately uploaded to the bucket
-    if args.cloud:
-        upload(args.cloud_dir, args_path, bucket)
 
+    # (8) check if checkpoint is stored in gcs bucket or confirm it exists on local machine
+    assert args.checkpoint is not None, 'Must give a model checkpoint for W2V2'
+    args.checkpoint = gcs_model_exists(args.checkpoint, args.bucket_name, args.exp_dir, bucket, True)
+    
     #(9) add bucket to args
     args.bucket = bucket
 

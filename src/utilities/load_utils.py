@@ -16,6 +16,28 @@ import pandas as pd
 from google.cloud import storage
 
 #GCS helper functions
+def gcs_model_exists(model_path, gcs_prefix, exp_dir, bucket, is_checkpoint):
+    """
+    check whether a model exists either in GCS bucket (which it then downloads), or on local machine
+    :param model_path: specify what model path you are loading args for
+    :param gcs_prefix: location of file in GCS (if it exists there, else can be None)
+    :param exp_dir: specify LOCAL output directory as str
+    :param bucket: google cloud storage bucket object
+    :param is_checkpoint: boolean indicating whether the model given is a w2v2 checkpoint, which needs to be downloaded differently
+    :return model_path: updated model path (in case it needed to be downloaded from gcs)
+    """
+    if model_path[:5] =='gs://':
+        mdl_path = model_path[5:].replace(gcs_prefix,'')[1:]
+        if is_checkpoint:
+            model_path = download_dir(mdl_path, bucket)
+        else:
+            model_path = download_model(mdl_path, exp_dir, bucket)
+        
+    else:
+        assert os.path.exists(model_path), f'Current model ({model_path}) does not exist in bucket or on local machine'
+
+    return model_path
+
 def download_dir(gcs_dir, bucket):
     '''
     Download a directory from google cloud storage bucket.
@@ -84,14 +106,15 @@ def upload(gcs_prefix, path, bucket):
     blob.upload_from_filename(path)
 
 #Load functions
-def load_args(args):
+def load_args(args, model_path):
     '''
     Load in an .pkl file of args
     :param args: dict with all the argument values
-    :return model_args: dict with all the argument values from the finetuned model
+    :param model_path: specify what model path you are loading args for
+    :return model_args: dict with all the argument values from the model
     '''
     # assumes that the model is saved in the same folder as an args.pkl file 
-    folder = os.path.dirname(args.finetuned_mdl_path)
+    folder = os.path.dirname(model_path)
 
     if os.path.exists(os.path.join(folder, 'model_args.pkl')): #if downloaded from gcs into the exp dir, it should be saved under mdl_args.pkl to make sure it doesn't overwrite the args.pkl
         with open(os.path.join(folder, 'model_args.pkl'), 'rb') as f:
@@ -100,54 +123,50 @@ def load_args(args):
         with open(os.path.join(folder, 'args.pkl'), 'rb') as f:
             model_args = pickle.load(f)
     else: #if there are no saved args
-        print('No args.pkl or model_args.pkl stored with the finetuned model. Using the current args for initializing the finetuned model instead.')
+        print('No args.pkl or model_args.pkl stored with the model. Using the current args.')
         model_args = args
     
     return model_args
 
-def setup_mdl_args(args):
+def setup_mdl_args(args, model_path):
     '''
-    Get model args used during finetuning of the specified model
+    Get model args used during pretraining or finetuning of the specified model
     :param args: dict with all the argument values
+    :param model_path: specify what model path you are loading args for
     :return model_args: dict with all the argument values from the finetuned model
     :return finetuned_mdl_path: updated finetuned_mdl_path (in case it needed to be downloaded from gcs)
     '''
-    #if running a pretrained model only, use the args from this run
-    if args.finetuned_mdl_path is None:
-        model_args = args
+    # if the model_path is not specificed
+    if model_path is None:
+        model_args = args #return the args for the current run
     else:
-    #if running a finetuned model
-        #(1): check if saved on cloud and load the model and args.pkl
-        if args.finetuned_mdl_path[:5] =='gs://':
-                mdl_path = args.finetuned_mdl_path[5:].replace(args.bucket_name,'')[1:]
-                args.finetuned_mdl_path = download_model(mdl_path, args.exp_dir, args.bucket)
+        orig_path = model_path
+
+        is_checkpoint = (model_path == args.checkpoint)
+
+        #(1): check if the given model path was saved on the cloud and load the model and potentialy the args.pkl file in
+        model_path = gcs_model_exists(model_path, args.bucket_name, args.exp_dir, args.bucket, is_checkpoint)
         
         #(2): load the args used for finetuning
-        model_args = load_args(args)
+        model_args = load_args(args, model_path)
 
-        #(3): check if the checkpoint for the finetuned model is downloaded
-        if model_args.checkpoint[:5] =='gs://': #if checkpoint on cloud
-            checkpoint = model_args.checkpoint[5:].replace(model_args.bucket_name,'')[1:]
+        #(3): if loading a finetuned model, that is args.finetuned_mdl_path = orig_path, make sure the pretrained model is available
+        if args.finetuned_mdl_path == orig_path:
             if model_args.bucket_name != args.bucket_name: #if the bucket is not the same as the current bucket, initialize the bucket for downloading
-                if args.bucket_name is not None:
-                    storage_client = storage.Client(project=model_args.project_name)
-                    model_args.bucket = storage_client.bucket(model_args.bucket_name)
-                else:
-                    model_args.bucket = None
-
-                checkpoint = download_dir(checkpoint, model_args.bucket) #download with the new bucket
+                storage_client = storage.Client(project=model_args.project_name)
+                bucket = storage_client.bucket(model_args.bucket_name)
             else:
-                checkpoint = download_dir(checkpoint, args.bucket) #download with the current bucket
-            model_args.checkpoint = checkpoint #reset the checkpoint path
-        else: #load in from local machine, just need to check that the path exists
-            assert os.path.exists(model_args.checkpoint), f'Current checkpoint does not exist on local machine: {model_args.checkpoint}'
+                bucket = args.bucket
 
-    return model_args, args.finetuned_mdl_path
+            model_args.checkpoint = gcs_model_exists(model_args.checkpoint, model_args.bucket_name, args.exp_dir, bucket, True)
+            
+    return model_args, model_path
 
-def load_data(data_split_root, exp_dir, cloud, cloud_dir, bucket):
+def load_data(data_split_root, target_labels, exp_dir, cloud, cloud_dir, bucket):
     """
     Load the train and test data from a directory. Assumes the train and test data will exist in this directory under train.csv and test.csv
     :param data_split_root: specify str path where datasplit csvs are located
+    :param target_labels: list of target labels
     :param exp_dir: specify LOCAL output directory as str
     :param cloud: boolean to specify whether to save everything to google cloud storage
     :param cloud_dir: if saving to the cloud, you can specify a specific place to save to in the CLOUD bucket
@@ -178,5 +197,10 @@ def load_data(data_split_root, exp_dir, cloud, cloud_dir, bucket):
         val_df["distortions"]=((val_df["distorted Cs"]+val_df["distorted V"])>0).astype(int)
     if 'distortions' not in test_df.columns:
         test_df["distortions"]=((test_df["distorted Cs"]+test_df["distorted V"])>0).astype(int)
+
+    #remove NA
+    train_df=train_df.dropna(subset=target_labels)
+    val_df=val_df.dropna(subset=target_labels)
+    test_df=test_df.dropna(subset=target_labels)
 
     return train_df, val_df, test_df
