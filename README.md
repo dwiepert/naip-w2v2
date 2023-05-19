@@ -62,11 +62,11 @@ DATA SPLIT DIR
     -- test.csv
 
 ## Audio Configuration
-Data is loaded using an `W2V2Dataset` class, where you pass a dataframe of the file names (UIDs) along with columns containing label data, a list of the target labels (columns to select from the df), specify audio configuration, method of loading, and initialize transforms on the raw waveform and spectrogram (see [dataloader.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/dataloader.py)). 
+Data is loaded using an `W2V2Dataset` class, where you pass a dataframe of the file names (UIDs) along with columns containing label data, a list of the target labels (columns to select from the df), specify audio configuration, method of loading, and initialize transforms on the raw waveform (see [dataloader.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/dataloader.py)). 
 
 To specify audio loading method, you can alter the `bucket` variable and `librosa` variable. As a default, `bucket` is set to None, which will force loading from the local machine. If using GCS, pass a fully initialized bucket. Setting the `librosa` value to 'True' will cause the audio to be loaded using librosa rather than torchaudio. 
 
-The audio configuration parameters should be given as a dictionary (which can be seen in [run.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/run.py) and [run.ipynb](https://github.com/dwiepert/mayo-w2v2/blob/main/src/run.ipynb). Most configuration values are for initializing audio and spectrogram transforms. The transform will only be initialized if the value is not 0. If you have a further desire to add transforms, see [speech_utils.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/utilities/speech_utils.py)) and alter [dataloader.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/dataloader.py) accordingly. 
+The audio configuration parameters should be given as a dictionary (which can be seen in [run.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/run.py) and [run.ipynb](https://github.com/dwiepert/mayo-w2v2/blob/main/src/run.ipynb). Most configuration values are for initializing audio transforms. The transform will only be initialized if the value is not 0. If you have a further desire to add transforms, see [speech_utils.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/utilities/speech_utils.py)) and alter [dataloader.py](https://github.com/dwiepert/mayo-w2v2/blob/main/src/dataloader.py) accordingly. 
 
 The following parameters are accepted (`--` indicates the command line argument to alter to set it):
 
@@ -148,7 +148,7 @@ If you have a finetuned model and want to evaluate it on a new data set, you can
 
 It is expected that there is an `args.pkl` file in the same directory as the finetuned model to indicate which arguments were used to initialize the finetuned model. This implementation will load the arguments and initialize/load the finetuned model with these arguments. If no such file exists, it will use the arguments from the current run, which could be incompatible if you are not careful. 
 
-### 3. Embedding extraction.
+### 3. Embedding extraction
 We implemented multiple embedding extraction methods for use with the SSAST model. The implementation is a function within `W2V2ForSpeechClassification` called `extract_embedding(x, embedding_type, layer, pooling_mode, ...)`, which is called on batches instead of the forward function. 
 
 Embedding extraction is triggered by setting `-m, --mode` to 'extraction'. 
