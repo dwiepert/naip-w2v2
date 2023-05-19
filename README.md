@@ -29,7 +29,7 @@ To access data stored in GCS on your local machine, you will need to additionall
 
 ```gcloud auth application-defaul set-quota-project PROJECT_NAME```
 
-Please note that if using GCS, the model expects arguments like model paths or directories to start with `gs://PROJECT_NAME/...` with the exception of defining an output cloud directory which should just be the prefix to save within a bucket. 
+Please note that if using GCS, the model expects arguments like model paths or directories to start with `gs://BUCKET_NAME/...` with the exception of defining an output cloud directory which should just be the prefix to save within a bucket. 
 
 ## Model checkpoints
 In order to initialize a wav2vec 2.0 model, you must have access to a pretrained model checkpoint. There are a few different checkpoint options which can be found at [HuggingFace](https://huggingface.co/models). The default model used is [facebook/wav2vec2-base-960h](https://huggingface.co/facebook/wav2vec2-base-960h). These model checkpoints can be loaded in a couple different ways.
