@@ -38,7 +38,7 @@ def get_embeddings(args):
     if args.finetuned_mdl_path is not None:
         model_args, args.finetuned_mdl_path = setup_mdl_args(args, args.finetuned_mdl_path)
     else:
-        model_args, args.checkpoint = setup_mdl_args(args, args.checkpoint)
+        model_args = args #we do not pretrain from scratch so the checkpoint will never include an args.pkl file
 
 
     # (1) load data to get embeddings for
