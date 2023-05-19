@@ -47,8 +47,12 @@ class Wav2VecFeatureExtractor(object):
         :param sample: dictionary object storing input value, associated label, attention mask, and other information about a given sample
         :return updated sample
         """
-        x=sample['waveform'].numpy()
-        x=np.squeeze(x)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.feature_extractor = self.feature_extractor.to(device)
+        x = torch.squeeze(sample['waveform'], dim=1)
+        x = x.to(device)
+        # x=sample['waveform'].numpy()
+        # x=np.squeeze(x)
         sr = sample['sample_rate']
         ml = int(self.max_length*sr)
         
@@ -67,7 +71,7 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
     Source: https://colab.research.google.com/github/m3hrdadfi/soxan/blob/main/notebooks/Eating_Sound_Collection_using_Wav2Vec2.ipynb#scrollTo=Fv62ShDsH5DZ
     """
     def __init__(self, checkpoint, label_dim=5, pooling_mode='mean', 
-                 freeze=True, activation='relu', final_dropout=0.25, layernorm=False, 
+                 freeze=True, activation='relu', final_dropout=0.2, layernorm=False, 
                  weighted=False, layer=-1):
         """
         :param checkpoint: path to where model checkpoint is saved (str)

@@ -57,6 +57,13 @@ class W2V2Dataset(Dataset):
         self.reduce = self.audio_conf.get('reduce') #reduce to monochannel if True
         self.trim = self.audio_conf.get('trim') #trim silence if True
         self.clip_length = self.audio_conf.get('clip_length') #truncate clip to specified length if != 0
+        self.max_length = self.audio_conf.get('max_length')
+        self.truncation = self.audio_conf.get('truncation')
+
+        if self.truncation:
+            assert self.max_length is not None, 'if truncating, max length also needs to be set'
+            assert self.max_length > 0, 'if truncating, max length needs to be greater than 0'
+            self.clip_length = 0 #if truncating, do not need to do the additional truncation transform. The Feature extractor will handle it
         
         self.label_num = len(self.target_labels)
         print('number of classes is {:d}'.format(self.label_num))
@@ -91,7 +98,7 @@ class W2V2Dataset(Dataset):
 
         tensor_tfm = ToTensor()
         transform_list.append(tensor_tfm)
-        feature_tfm = Wav2VecFeatureExtractor(self.checkpoint)
+        feature_tfm = Wav2VecFeatureExtractor(self.checkpoint, self.max_length, self.truncation)
         transform_list.append(feature_tfm)
         transform = torchvision.transforms.Compose(transform_list)
         return transform

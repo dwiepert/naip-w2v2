@@ -52,7 +52,7 @@ def get_embeddings(args):
 
     # (2) set up audio configuration for transforms
     audio_conf = {'checkpoint': args.checkpoint, 'resample_rate':args.resample_rate, 'reduce': args.reduce,
-                  'trim': args.trim, 'clip_length': args.clip_length}
+                  'trim': args.trim, 'clip_length': args.clip_length, 'max_length': args.max_length, 'truncation':args.truncation}
     
     # (3) set up dataloaders
     waveform_dataset = W2V2Dataset(annotations_df = annotations_df, target_labels = model_args.target_labels,
@@ -122,7 +122,7 @@ def finetune_w2v2(args):
 
     # (2) set up audio configuration for transforms
     audio_conf = {'checkpoint': args.checkpoint, 'resample_rate':args.resample_rate, 'reduce': args.reduce,
-                  'trim': args.trim, 'clip_length': args.clip_length}
+                  'trim': args.trim, 'clip_length': args.clip_length, 'max_length': args.max_length, 'truncation':args.truncation}
     
 
     # (3) set up datasets and dataloaders
@@ -191,7 +191,7 @@ def eval_only(args):
 
     # (2) set up audio configuration for transforms
     audio_conf = {'checkpoint': args.checkpoint, 'resample_rate':args.resample_rate, 'reduce': args.reduce,
-                  'trim': args.trim, 'clip_length': args.clip_length}
+                  'trim': args.trim, 'clip_length': args.clip_length, 'max_length': args.max_length, 'truncation':args.truncation}
     
     # (3) set up datasets and dataloaders
     dataset_eval = W2V2Dataset(eval_df, target_labels = model_args.target_labels,
@@ -243,6 +243,8 @@ def main():
     parser.add_argument("--reduce", default=True, type=bool, help="Specify whether to reduce to monochannel")
     parser.add_argument("--clip_length", default=160000, type=int, help="If truncating audio, specify clip length in # of frames. 0 = no truncation")
     parser.add_argument("--trim", default=False, type=int, help="trim silence")
+    parser.add_argument("--max_length", defualt=10.0, type=float, help="specify max length of file")
+    parser.add_argument("--truncation", default=True, type=bool, help='specify whether to truncate to max length')
     #Model parameters
     parser.add_argument("-pm", "--pooling_mode", default="mean", help="specify method of pooling last hidden layer", choices=['mean','sum','max'])
     parser.add_argument("-bs", "--batch_size", type=int, default=8, help="specify batch size")
@@ -255,7 +257,7 @@ def main():
     parser.add_argument("--max_lr", type=float, default=0.01, help="specify max lr for lr scheduler")
     #classification head parameters
     parser.add_argument("--activation", type=str, default='relu', help="specify activation function to use for classification head")
-    parser.add_argument("--final_dropout", type=float, default=0.25, help="specify dropout probability for final dropout layer in classification head")
+    parser.add_argument("--final_dropout", type=float, default=0.2, help="specify dropout probability for final dropout layer in classification head")
     parser.add_argument("--layernorm", type=bool, default=False, help="specify whether to include the LayerNorm in classification head")
     #OTHER
     parser.add_argument("--debug", default=True, type=bool)
@@ -298,11 +300,14 @@ def main():
         os.makedirs(args.exp_dir)
 
     # (6) check that clip length has been set
-    if args.clip_length == 0:
-        try: 
-            assert args.batch_size == 1, 'Not currently compatible with different length wav files unless batch size has been set to 1'
-        except:
-            args.batch_size = 1
+    if args.max_length is not None and args.truncation: #if you set max length
+        args.clip_length = 0 #skip the truncation transform - it will happen in the feature extractor
+    else:
+        if args.clip_length == 0:
+            try: 
+                assert args.batch_size == 1, 'Not currently compatible with different length wav files unless batch size has been set to 1'
+            except:
+                args.batch_size = 1
     
     # (7) dump arguments
     args_path = "%s/args.pkl" % args.exp_dir

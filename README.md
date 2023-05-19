@@ -75,6 +75,8 @@ The following parameters are accepted (`--` indicates the command line argument 
 * `reduce`: a boolean indicating whether to reduce audio to monochannel. Set with `--reduce`
 * `clip_length`: integer specifying how many frames the audio should be. Set with `--clip_length`
 * `trim`: boolean specifying whether to trim beginning and end silence. Set with `--trim`
+* `max_length`: float specifying the max length of the audio in seconds. It will override `clip_length` if `truncation` is also True. Set with `--max_length`
+* `truncation`: boolean specifying whether to truncate to max length. Set with `--truncation`
 
 
 ## Arguments
