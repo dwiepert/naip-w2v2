@@ -143,8 +143,8 @@ def finetune_w2v2(args):
     
     # (5) start fine-tuning classification
     model = finetune(model, dataloader_train, dataloader_val,
-                     args.optim, args.learning_rate, args.loss, 
-                     args.scheduler, args.max_lr, args.epochs,
+                     args.optim, args.learning_rate, args.weight_decay,
+                     args.loss, args.scheduler, args.max_lr, args.epochs,
                      args.exp_dir, args.cloud, args.cloud_dir, args.bucket)
 
     print('Saving final epoch')
@@ -247,7 +247,8 @@ def main():
     parser.add_argument("-nw", "--num_workers", type=int, default=0, help="specify number of parallel jobs to run for data loader")
     parser.add_argument("-lr", "--learning_rate", type=float, default=0.0003, help="specify learning rate")
     parser.add_argument("-e", "--epochs", type=int, default=1, help="specify number of training epochs")
-    parser.add_argument("--optim", type=str, default="adam", help="training optimizer", choices=["adam"])
+    parser.add_argument("--optim", type=str, default="adam", help="training optimizer", choices=["adam", "adamw"])
+    parser.add_argument("--weight_decay", type=float, default=.0001, help='specify weight decay for adamw')
     parser.add_argument("--loss", type=str, default="BCE", help="the loss function for finetuning, depend on the task", choices=["MSE", "BCE"])
     parser.add_argument("--scheduler", type=str, default=None, help="specify lr scheduler", choices=["onecycle", None])
     parser.add_argument("--max_lr", type=float, default=0.01, help="specify max lr for lr scheduler")
