@@ -123,7 +123,6 @@ class W2V2Dataset(Dataset):
         
         uid = self.annotations_df.index[idx] #get uid to load
 
-
         targets = self.annotations_df[self.target_labels].iloc[idx].values #get target labels for given uid
         
         sample = {
