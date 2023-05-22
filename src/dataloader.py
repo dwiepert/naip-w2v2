@@ -45,6 +45,8 @@ class W2V2Dataset(Dataset):
         #set instance variables
         self.annotations_df = annotations_df
         self.target_labels = target_labels
+        if self.target_labels is None:
+            self.target_labels = np.array([])
         self.prefix = prefix
         self.bucket = bucket
         self.lib = librosa #set up using librosa vs. torchaudio for loading
@@ -58,11 +60,9 @@ class W2V2Dataset(Dataset):
         self.trim = self.audio_conf.get('trim') #trim silence if True
         self.clip_length = self.audio_conf.get('clip_length') #truncate clip to specified length if != 0
   
-        if self.target_labels is not None:
-            self.label_num = len(self.target_labels)
-            print('number of classes is {:d}'.format(self.label_num))
-        else:
-            self.label_num = 0
+        self.label_num = len(self.target_labels)
+        print('number of classes is {:d}'.format(self.label_num))
+
 
         self.audio_transform = self._getaudiotransform() #get audio transforms
         
@@ -123,8 +123,6 @@ class W2V2Dataset(Dataset):
         
         uid = self.annotations_df.index[idx] #get uid to load
 
-        if self.target_labels is None:
-            targets = np.array([])
 
         targets = self.annotations_df[self.target_labels].iloc[idx].values #get target labels for given uid
         
