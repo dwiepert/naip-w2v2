@@ -221,7 +221,7 @@ def main():
     parser.add_argument('-l','--label_txt', default='./labels.txt') #default=None #default='./labels.txt'
     parser.add_argument('--lib', default=False, type=bool, help="Specify whether to load using librosa as compared to torch audio")
     parser.add_argument("-c", "--checkpoint", default="gs://ml-e107-phi-shared-aif-us-p/m144443/checkpoints/wav2vec2-base-960h", help="specify path to pre-trained model weight checkpoint")
-    parser.add_argument("-mp", "--finetuned_mdl_path", default='', help='If running eval-only or extraction, you have the option to load a fine-tuned model by specifying the save path here. If passed a gs:// file, will download to local machine.')
+    parser.add_argument("-mp", "--finetuned_mdl_path", default=None, help='If running eval-only or extraction, you have the option to load a fine-tuned model by specifying the save path here. If passed a gs:// file, will download to local machine.')
     #GCS
     parser.add_argument('-b','--bucket_name', default='ml-e107-phi-shared-aif-us-p', help="google cloud storage bucket name")
     parser.add_argument('-p','--project_name', default='ml-mps-aif-afdgpet01-p-6827', help='google cloud platform project name')
