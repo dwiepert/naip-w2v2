@@ -159,15 +159,11 @@ def validation(model, criterion, dataloader_val):
 
     return validation_loss
 
-def evaluation(model, dataloader_eval, exp_dir, cloud=False, cloud_dir=None, bucket=None):
+def evaluation(model, dataloader_eval):
     """
     Start model evaluation
     :param model: W2V2 model
     :param dataloader_eval: dataloader object with evaluation data
-    :param exp_dir: specify LOCAL output directory as str
-    :param cloud: boolean to specify whether to save everything to google cloud storage
-    :param cloud_dir: if saving to the cloud, you can specify a specific place to save to in the CLOUD bucket
-    :param bucket: google cloud storage bucket object
     :return preds: model predictions
     :return targets: model targets (actual values)
     """
@@ -190,15 +186,6 @@ def evaluation(model, dataloader_eval, exp_dir, cloud=False, cloud_dir=None, buc
     outputs = torch.cat(outputs).cpu().detach()
     t = torch.cat(t).cpu().detach()
     # SAVE PREDICTIONS AND TARGETS 
-    print('Saving predictions')
-    pred_path = os.path.join(exp_dir, 'w2v2_eval_predictions.pt')
-    target_path = os.path.join(exp_dir, 'w2v2_eval_targets.pt')
-    torch.save(outputs, pred_path)
-    torch.save(t, target_path)
-
-    if cloud:
-        upload(cloud_dir, pred_path, bucket)
-        upload(cloud_dir, target_path, bucket)
 
     print('Evaluation finished')
     return outputs, t

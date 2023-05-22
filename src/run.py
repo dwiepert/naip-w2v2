@@ -45,6 +45,9 @@ def get_embeddings(args):
     assert '.csv' in args.data_split_root, f'A csv file is necessary for embedding extraction. Please make sure this is a full file path: {args.data_split_root}'
     annotations_df = pd.read_csv(args.data_split_root, index_col = 'uid') #data_split_root should use the CURRENT arguments regardless of the finetuned model
 
+    if 'distortions' in args.target_labels and 'distortions' not in annotations_df.columns:
+        annotations_df["distortions"]=((annotations_df["distorted Cs"]+annotations_df["distorted V"])>0).astype(int)
+
     if args.debug:
         annotations_df = annotations_df.iloc[0:8,:]
 
@@ -85,7 +88,7 @@ def get_embeddings(args):
         args.layer='Final'
 
     try:
-        pqt_path = '{}/{}_layer{}_{}_w2v2_{}_embeddings.pqt'.format(args.exp_dir, args.dataset, args.layer, args.pooling_mode,args.embedding_type)
+        pqt_path = '{}/{}_embedlayer{}_{}_{}_embeddings.pqt'.format(args.exp_dir, args.dataset, args.layer, args.pooling_mode,args.embedding_type)
         
         df_embed.to_parquet(path=pqt_path, index=True, engine='pyarrow') #TODO: fix
 
@@ -93,7 +96,7 @@ def get_embeddings(args):
             upload(args.cloud_dir, pqt_path, args.bucket)
     except:
         print('Unable to save as pqt, saving instead as csv')
-        csv_path = '{}/{}_layer{}_{}_w2v2_{}_embeddings.csv'.format(args.exp_dir, args.dataset, args.layer, args.pooling_mode,args.embedding_type)
+        csv_path = '{}/{}_embedlayer{}_{}_{}_embeddings.csv'.format(args.exp_dir, args.dataset, args.layer, args.pooling_mode,args.embedding_type)
         
         df_embed.to_csv(csv_path, index=True)
 
@@ -150,7 +153,7 @@ def finetune_w2v2(args):
     print('Saving final epoch')
 
     if model.weighted:
-        mdl_path = os.path.join(args.exp_dir, '{}_{}_{}_epoch{}_{}_mdl_weighted.pt'.format(args.dataset, args.n_class, args.optim, args.epochs, os.path.basename(args.checkpoint)))
+        mdl_path = os.path.join(args.exp_dir, '{}_{}_{}_epoch{}_{}_weighted_mdl.pt'.format(args.dataset, args.n_class, args.optim, args.epochs, os.path.basename(args.checkpoint)))
     else:
         if args.layer==-1:
             args.layer='Final'
@@ -161,7 +164,24 @@ def finetune_w2v2(args):
         upload(args.cloud_dir, mdl_path, args.bucket)
 
     # (6) start evaluating
-    preds, targets = evaluation(model, dataloader_test, args.exp_dir, args.cloud, args.cloud_dir, args.bucket)
+    preds, targets = evaluation(model, dataloader_test)
+
+    print('Saving predictions and targets')
+    if model.weighted:
+        pred_path = os.path.join(args.exp_dir, '{}_{}_{}_epoch{}_{}_weighted_predictions.pt'.format(args.dataset, args.n_class, args.optim, args.epochs, os.path.basename(args.checkpoint)))
+        target_path = os.path.join(args.exp_dir, '{}_{}_{}_epoch{}_{}_weighted_targets.pt'.format(args.dataset, args.n_class, args.optim, args.epochs, os.path.basename(args.checkpoint)))
+    else:
+        if args.layer==-1:
+            args.layer='Final'
+        pred_path = os.path.join(args.exp_dir, '{}_{}_{}_layer{}_epoch{}_{}_predictions.pt'.format(args.dataset, args.n_class, args.optim, args.layer, args.epochs, os.path.basename(args.checkpoint)))
+        target_path = os.path.join(args.exp_dir, '{}_{}_{}_layer{}_epoch{}_{}_targets.pt'.format(args.dataset, args.n_class, args.optim, args.layer, args.epochs, os.path.basename(args.checkpoint)))
+
+    torch.save(preds, pred_path)
+    torch.save(targets, target_path)
+
+    if args.cloud:
+        upload(args.cloud_dir, pred_path, args.bucket)
+        upload(args.cloud_dir, target_path, args.bucket)
 
     print('Finetuning finished')
 
@@ -207,7 +227,17 @@ def eval_only(args):
     model.load_state_dict(sd, strict=False)
     
     # (6) start evaluating
-    preds, targets = evaluation(model, dataloader_eval, args.exp_dir, args.cloud, args.cloud_dir, args.bucket)
+    preds, targets = evaluation(model, dataloader_eval)
+    
+    print('Saving predictions and targets')
+    pred_path = os.path.join(args.exp_dir, '{}_predictions.pt'.format(args.dataset))
+    target_path = os.path.join(args.exp_dir, '{}_targets.pt'.format(args.dataset))
+    torch.save(preds, pred_path)
+    torch.save(targets, target_path)
+
+    if args.cloud:
+        upload(args.cloud_dir, pred_path, args.bucket)
+        upload(args.cloud_dir, target_path, args.bucket)
 
     print('Evaluation finished')
 
@@ -278,10 +308,13 @@ def main():
     
     # (3) get dataset name
     if args.dataset is None:
-        if '.csv' in args.data_split_root:
-            args.dataset = '{}_{}'.format(os.path.basename(os.path.dirname(args.data_split_root)), os.path.basename(args.data_split_root[:-4]))
+        if args.trained_mdl_path is None or args.mode == 'train':
+            if '.csv' in args.data_split_root:
+                args.dataset = '{}_{}'.format(os.path.basename(os.path.dirname(args.data_split_root)), os.path.basename(args.data_split_root[:-4]))
+            else:
+                args.dataset = os.path.basename(args.data_split_root)
         else:
-            args.dataset = os.path.basename(args.data_split_root)
+            args.dataset = os.path.basename(args.trained_mdl_path)[:-7]
     
     # (4) get target labels
      #get list of target labels
