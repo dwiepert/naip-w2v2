@@ -239,7 +239,7 @@ def main():
     #Audio transforms
     parser.add_argument("--resample_rate", default=16000,type=int, help='resample rate for audio files')
     parser.add_argument("--reduce", default=True, type=bool, help="Specify whether to reduce to monochannel")
-    parser.add_argument("--clip_length", default=10.0, type=int, help="If truncating audio, specify clip length in # of frames. 0 = no truncation")
+    parser.add_argument("--clip_length", default=10.0, type=int, help="If truncating audio, specify clip length in seconds. 0 = no truncation")
     parser.add_argument("--trim", default=False, type=int, help="trim silence")
     #Model parameters
     parser.add_argument("-pm", "--pooling_mode", default="mean", help="specify method of pooling last hidden layer", choices=['mean','sum','max'])
