@@ -73,11 +73,8 @@ The following parameters are accepted (`--` indicates the command line argument 
 *Audio Transform Information*
 * `resample_rate`: an integer value for resampling. Set with `--resample_rate`
 * `reduce`: a boolean indicating whether to reduce audio to monochannel. Set with `--reduce`
-* `clip_length`: integer specifying how many frames the audio should be. Set with `--clip_length`
+* `clip_length`: float specifying how many seconds the audio should be. Will work with the 'sample_rate' of the audio to get # of frames. Set with `--clip_length`
 * `trim`: boolean specifying whether to trim beginning and end silence. Set with `--trim`
-* `max_length`: float specifying the max length of the audio in seconds. It will override `clip_length` if `truncation` is also True. Set with `--max_length`
-* `truncation`: boolean specifying whether to truncate to max length. Set with `--truncation`
-
 
 ## Arguments
 There are many possible arguments to set, including all the parameters associated with audio configuration. The main run function describes most of these, and you can alter defaults as required. 
@@ -86,7 +83,7 @@ There are many possible arguments to set, including all the parameters associate
 * `-i, --prefix`: sets the `prefix` or input directory. Compatible with both local and GCS bucket directories containing audio files, though do not include 'gs://'
 * `-s, --study`: optionally set the study. You can either include a full path to the study in the `prefix` arg or specify some parent directory in the `prefix` arg containing more than one study and further specify which study to select here.
 * `-d, --data_split_root`: sets the `data_split_root` directory or a full path to a single csv file. For classification, it must be  a directory containing a train.csv and test.csv of file names. If runnning embedding extraction, it should be a csv file. Running evaluation only can accept either a directory or a csv file. This path should include 'gs://' if it is located in a bucket. 
-* `-l, --label_txt`: sets the `label_txt` path. This is a full file path to a .txt file contain a list of the target labels for selection (see [labels.txt](https://github.com/dwiepert/mayo-ssast/blob/main/labels.txt))
+* `-l, --label_txt`: sets the `label_txt` path. This is a full file path to a .txt file contain a list of the target labels for selection (see [labels.txt](https://github.com/dwiepert/mayo-ssast/blob/main/labels.txt)). If it is empty, it will require that embedding extraction be running.
 * `--lib`: : specifies whether to load using librosa (True) or torchaudio (False), default=False
 * `-c, --checkpoint`: specify a pretrained model checkpoint - this is a base model from w2v2, as mentioned earlier. Default is 'facebook/wav2vec2-base-960h' which is a base model trained on 960h of Librispeech. This is required regardless of whether you include a fine-tuned model path. If using a checkpoint stored on GCS, make sure it starts with 'gs://'
 * `-mp, --finetuned_mdl_path`: if running eval-only or extraction, you can specify a fine-tuned model to load in. This can either be a local path of a 'gs://' path, that latter of which will trigger the code to download the specified model path to the local machine. 
@@ -159,6 +156,9 @@ You must also consider where you want the embeddings to be extracted from. The o
 1. From the output of a hidden state? Set `embedding_type` to 'pt'. Can further set an exact hidden state with the `layer` argument. By default, it will use the layer specified at the time of model initialization. The model default is to give the last hidden state run through a normalization layer, so the embedding is this output merged to be of size (batch size, embedding_dim). It will also automatically use the merging strategy defined by the mode set at the time of model initialization, but this can be changed at the time of embedding extraction by redefining `pooling_mode`.
 2. After weighting the hidden states? Set `embedding_type` to 'wt'. This version requires that the model was initially finetuned with  `weighted` set to True.
 3. From a layer in the classification head that has been finetuned? Set `embedding_type` to 'ft'. This version requires no further specification and will always return the output from the first dense layer in the classification head, prior to any activation function or normalization. 
+
+Brief note on target labels:
+Embedding extraction is the only mode where target labels are not required. You can give None or an empty list or np.array and it will still function and extract embeddings.
 
 ## Visualize Attention
 Not yet implemented. 

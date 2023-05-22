@@ -44,18 +44,16 @@ def get_embeddings(args):
     # (1) load data to get embeddings for
     assert '.csv' in args.data_split_root, f'A csv file is necessary for embedding extraction. Please make sure this is a full file path: {args.data_split_root}'
     annotations_df = pd.read_csv(args.data_split_root, index_col = 'uid') #data_split_root should use the CURRENT arguments regardless of the finetuned model
-    if 'distortions' not in annotations_df.columns:
-        annotations_df["distortions"]=((annotations_df["distorted Cs"]+annotations_df["distorted V"])>0).astype(int)
 
     if args.debug:
         annotations_df = annotations_df.iloc[0:8,:]
 
     # (2) set up audio configuration for transforms
     audio_conf = {'checkpoint': args.checkpoint, 'resample_rate':args.resample_rate, 'reduce': args.reduce,
-                  'trim': args.trim, 'clip_length': args.clip_length, 'max_length': args.max_length, 'truncation':args.truncation}
+                  'trim': args.trim, 'clip_length': args.clip_length}
     
     # (3) set up dataloaders
-    waveform_dataset = W2V2Dataset(annotations_df = annotations_df, target_labels = model_args.target_labels,
+    waveform_dataset = W2V2Dataset(annotations_df = annotations_df, target_labels = args.target_labels,
                                    audio_conf = audio_conf, prefix=args.prefix, bucket=args.bucket, librosa=args.lib) #not super important for embeddings, but the dataset should be selecting targets based on the FINETUNED model
     
     dataloader = DataLoader(waveform_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
@@ -122,7 +120,7 @@ def finetune_w2v2(args):
 
     # (2) set up audio configuration for transforms
     audio_conf = {'checkpoint': args.checkpoint, 'resample_rate':args.resample_rate, 'reduce': args.reduce,
-                  'trim': args.trim, 'clip_length': args.clip_length, 'max_length': args.max_length, 'truncation':args.truncation}
+                  'trim': args.trim, 'clip_length': args.clip_length}
     
 
     # (3) set up datasets and dataloaders
@@ -180,7 +178,7 @@ def eval_only(args):
    # (1) load data
     if '.csv' in args.data_split_root: 
         eval_df = pd.read_csv(args.data_split_root, index_col = 'uid')
-        if 'distortions' not in eval_df.columns:
+        if 'distortions' in args.target_labels and 'distortions' not in eval_df.columns:
             eval_df["distortions"]=((eval_df["distorted Cs"]+eval_df["distorted V"])>0).astype(int)
         eval_df = eval_df.dropna(subset=args.target_labels)
     else:
@@ -191,7 +189,7 @@ def eval_only(args):
 
     # (2) set up audio configuration for transforms
     audio_conf = {'checkpoint': args.checkpoint, 'resample_rate':args.resample_rate, 'reduce': args.reduce,
-                  'trim': args.trim, 'clip_length': args.clip_length, 'max_length': args.max_length, 'truncation':args.truncation}
+                  'trim': args.trim, 'clip_length': args.clip_length}
     
     # (3) set up datasets and dataloaders
     dataset_eval = W2V2Dataset(eval_df, target_labels = model_args.target_labels,
@@ -219,32 +217,30 @@ def main():
     #Inputs
     parser.add_argument('-i','--prefix',default='speech_ai/speech_lake/', help='Input directory or location in google cloud storage bucket containing files to load')
     parser.add_argument("-s", "--study", choices = ['r01_prelim','speech_poc_freeze_1', None], default='speech_poc_freeze_1', help="specify study name")
-    parser.add_argument("-d", "--data_split_root", default='gs://ml-e107-phi-shared-aif-us-p/speech_ai/share/data_splits/amr_subject_dedup_594_train_100_test_binarized_v20220620', help="specify file path where datasplit is located. If you give a full file path to classification, an error will be thrown. On the other hand, evaluation and embedding expects a single .csv file.")
-    parser.add_argument('-l','--label_txt', default='./labels.txt')
+    parser.add_argument("-d", "--data_split_root", default='gs://ml-e107-phi-shared-aif-us-p/speech_ai/share/data_splits/amr_subject_dedup_594_train_100_test_binarized_v20220620/test.csv', help="specify file path where datasplit is located. If you give a full file path to classification, an error will be thrown. On the other hand, evaluation and embedding expects a single .csv file.")
+    parser.add_argument('-l','--label_txt', default=None) #default=None #default='./labels.txt'
     parser.add_argument('--lib', default=False, type=bool, help="Specify whether to load using librosa as compared to torch audio")
     parser.add_argument("-c", "--checkpoint", default="gs://ml-e107-phi-shared-aif-us-p/m144443/checkpoints/wav2vec2-base-960h", help="specify path to pre-trained model weight checkpoint")
-    parser.add_argument("-mp", "--finetuned_mdl_path", default='gs://ml-e107-phi-shared-aif-us-p/m144443/temp_out/w2v2_ft/amr_subject_dedup_594_train_100_test_binarized_v20220620_6_adam_epochwav2vec2-base-960h_1_mdl.pt', help='If running eval-only or extraction, you have the option to load a fine-tuned model by specifying the save path here. If passed a gs:// file, will download to local machine.')
+    parser.add_argument("-mp", "--finetuned_mdl_path", default='/Users/m144443/Documents/GitHub/mayo-w2v2/experiments/amr_subject_dedup_594_train_100_test_binarized_v20220620_5_adam_layerFinal_epoch1_wav2vec2-base-960h_mdl.pt', help='If running eval-only or extraction, you have the option to load a fine-tuned model by specifying the save path here. If passed a gs:// file, will download to local machine.')
     #GCS
     parser.add_argument('-b','--bucket_name', default='ml-e107-phi-shared-aif-us-p', help="google cloud storage bucket name")
     parser.add_argument('-p','--project_name', default='ml-mps-aif-afdgpet01-p-6827', help='google cloud platform project name')
     parser.add_argument('--cloud', default=False, type=bool, help="Specify whether to save everything to cloud")
     #output
     parser.add_argument("--dataset", default=None,type=str, help="When saving, the dataset arg is used to set file names. If you do not specify, it will assume the lowest directory from data_split_root")
-    parser.add_argument("-o", "--exp_dir", default="./experiments/eval2", help='specify LOCAL output directory')
+    parser.add_argument("-o", "--exp_dir", default="./experiments/embeddings", help='specify LOCAL output directory')
     parser.add_argument('--cloud_dir', default='m144443/temp_out/w2v2_ft_weighted', type=str, help="if saving to the cloud, you can specify a specific place to save to in the CLOUD bucket")
     #Mode specific
-    parser.add_argument("-m", "--mode", choices=['finetune','eval','extraction'], default='eval')
+    parser.add_argument("-m", "--mode", choices=['finetune','eval','extraction'], default='extraction')
     parser.add_argument("--weighted", type=bool, default=False, help="specify whether to learn a weighted sum of layers for classification")
     parser.add_argument("--layer", default=-1, type=int, help="specify which hidden state is being used. It can be between -1 and 12")
     parser.add_argument("--freeze", type=bool, default=True, help='specify whether to freeze the base model')
-    parser.add_argument('--embedding_type', type=str, default='wt', help='specify whether embeddings should be extracted from classification head (ft) or base pretrained model (pt)', choices=['ft','pt'])
+    parser.add_argument('--embedding_type', type=str, default='ft', help='specify whether embeddings should be extracted from classification head (ft) or base pretrained model (pt)', choices=['ft','pt'])
     #Audio transforms
     parser.add_argument("--resample_rate", default=16000,type=int, help='resample rate for audio files')
     parser.add_argument("--reduce", default=True, type=bool, help="Specify whether to reduce to monochannel")
-    parser.add_argument("--clip_length", default=160000, type=int, help="If truncating audio, specify clip length in # of frames. 0 = no truncation")
+    parser.add_argument("--clip_length", default=10.0, type=int, help="If truncating audio, specify clip length in # of frames. 0 = no truncation")
     parser.add_argument("--trim", default=False, type=int, help="trim silence")
-    parser.add_argument("--max_length", defualt=10.0, type=float, help="specify max length of file")
-    parser.add_argument("--truncation", default=True, type=bool, help='specify whether to truncate to max length')
     #Model parameters
     parser.add_argument("-pm", "--pooling_mode", default="mean", help="specify method of pooling last hidden layer", choices=['mean','sum','max'])
     parser.add_argument("-bs", "--batch_size", type=int, default=8, help="specify batch size")
@@ -288,20 +284,28 @@ def main():
     
     # (4) get target labels
      #get list of target labels
-    with open(args.label_txt) as f:
-        target_labels = f.readlines()
-    target_labels = [l.strip() for l in target_labels]
-    args.target_labels = target_labels
+    if args.label_txt is None:
+        assert args.mode == 'extraction', 'Must give a txt with target labels for training or evaluating.'
+        args.target_labels = None
+        args.n_class = 0
+    else:
+        with open(args.label_txt) as f:
+            target_labels = f.readlines()
+        target_labels = [l.strip() for l in target_labels]
+        args.target_labels = target_labels
 
-    args.n_class = len(target_labels)
+        args.n_class = len(target_labels)
+
+        if args.n_class == 0:
+            assert args.mode == 'extraction', 'Target labels must be given for training or evaluating. Txt file was empty.'
 
     # (5) check if output directory exists, SHOULD NOT BE A GS:// path
     if not os.path.exists(args.exp_dir):
         os.makedirs(args.exp_dir)
 
     # (6) check that clip length has been set
-    if args.max_length is not None and args.truncation: #if you set max length
-        args.clip_length = 0 #skip the truncation transform - it will happen in the feature extractor
+    if args.clip_length != 0:
+        args.truncation = False #w2v2 feature extractor does not PAD, so you need to deal with the length and such here. 
     else:
         if args.clip_length == 0:
             try: 

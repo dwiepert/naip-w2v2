@@ -30,7 +30,7 @@ class W2V2Dataset(Dataset):
 
         :param annotations_df: dataframe containing uid of audio file along with labels
         :type annotations_df: pd.DataFrame
-        :param target_labels: list containing the specific target labels to select
+        :param target_labels: list containing the specific target labels to select, can give None (assuming there are no target labels in the df) or an empty list or np array.
         :type target_labels: List[Str]
         :param audio_conf: dictionary containing all information for transforms (audio configuration dict)
         :type audio_conf: dict
@@ -57,16 +57,12 @@ class W2V2Dataset(Dataset):
         self.reduce = self.audio_conf.get('reduce') #reduce to monochannel if True
         self.trim = self.audio_conf.get('trim') #trim silence if True
         self.clip_length = self.audio_conf.get('clip_length') #truncate clip to specified length if != 0
-        self.max_length = self.audio_conf.get('max_length')
-        self.truncation = self.audio_conf.get('truncation')
-
-        if self.truncation:
-            assert self.max_length is not None, 'if truncating, max length also needs to be set'
-            assert self.max_length > 0, 'if truncating, max length needs to be greater than 0'
-            self.clip_length = 0 #if truncating, do not need to do the additional truncation transform. The Feature extractor will handle it
-        
-        self.label_num = len(self.target_labels)
-        print('number of classes is {:d}'.format(self.label_num))
+  
+        if self.target_labels is not None:
+            self.label_num = len(self.target_labels)
+            print('number of classes is {:d}'.format(self.label_num))
+        else:
+            self.label_num = 0
 
         self.audio_transform = self._getaudiotransform() #get audio transforms
         
@@ -98,7 +94,7 @@ class W2V2Dataset(Dataset):
 
         tensor_tfm = ToTensor()
         transform_list.append(tensor_tfm)
-        feature_tfm = Wav2VecFeatureExtractor(self.checkpoint, self.max_length, self.truncation)
+        feature_tfm = Wav2VecFeatureExtractor(self.checkpoint, self.clip_length)
         transform_list.append(feature_tfm)
         transform = torchvision.transforms.Compose(transform_list)
         return transform
@@ -126,6 +122,10 @@ class W2V2Dataset(Dataset):
             idx = idx.tolist()
         
         uid = self.annotations_df.index[idx] #get uid to load
+
+        if self.target_labels is None:
+            targets = np.array([])
+
         targets = self.annotations_df[self.target_labels].iloc[idx].values #get target labels for given uid
         
         sample = {

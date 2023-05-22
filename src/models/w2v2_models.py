@@ -30,7 +30,7 @@ class Wav2VecFeatureExtractor(object):
         Call takes raw waveform and runs it through the feature extractor 
     '''
     
-    def __init__(self, checkpoint, max_length=10.0, truncation=True):
+    def __init__(self, checkpoint, max_length=10.0, truncation=False):
         """
         :param checkpoint: checkpoint to w2v2 model from huggingFace
         :param max_length: specify max length of a sample in s (float, default = 10.0 s)
@@ -47,10 +47,7 @@ class Wav2VecFeatureExtractor(object):
         :param sample: dictionary object storing input value, associated label, attention mask, and other information about a given sample
         :return updated sample
         """
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.feature_extractor = self.feature_extractor.to(device)
         x = torch.squeeze(sample['waveform'], dim=1)
-        x = x.to(device)
         # x=sample['waveform'].numpy()
         # x=np.squeeze(x)
         sr = sample['sample_rate']
@@ -58,7 +55,7 @@ class Wav2VecFeatureExtractor(object):
         
         feature = self.feature_extractor(x, sampling_rate=sr, max_length=ml, truncation=self.truncation, return_tensors='pt', return_attention_mask=True)
         
-        sample['waveform'] = feature['input_values']
+        sample['waveform'] = torch.squeeze(feature['input_values'], dim=1)
         sample['attention_mask'] = feature['attention_mask']
         
         return sample 
