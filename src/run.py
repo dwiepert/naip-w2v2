@@ -71,7 +71,7 @@ def get_embeddings(args):
         sd = torch.load(args.finetuned_mdl_path, map_location=device)
         model.load_state_dict(sd, strict=False)
     else:
-        print(f'Extracting embeddings from only a pretrained model: {args.pretrained_mdl_path}. Extraction method changed to pt.')
+        print(f'Extracting embeddings from only a pretrained model: {args.checkpoint}. Extraction method changed to pt.')
         args.embedding_type = 'pt' #manually change the type to 'pt' if not given a finetuned mdl path.
 
     # (5) get embeddings
@@ -314,7 +314,7 @@ def main():
             else:
                 args.dataset = os.path.basename(args.data_split_root)
         else:
-            args.dataset = os.path.basename(args.trained_mdl_path)[:-7]
+            args.dataset = os.path.basename(args.finetuned_mdl_path)[:-7]
     
     # (4) get target labels
      #get list of target labels
