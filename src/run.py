@@ -152,7 +152,7 @@ def finetune_w2v2(args):
 
     print('Saving final epoch')
 
-    if model.weighted:
+    if args.weighted:
         mdl_path = os.path.join(args.exp_dir, '{}_{}_{}_epoch{}_{}_weighted_mdl.pt'.format(args.dataset, args.n_class, args.optim, args.epochs, os.path.basename(args.checkpoint)))
     else:
         if args.layer==-1:
@@ -167,7 +167,7 @@ def finetune_w2v2(args):
     preds, targets = evaluation(model, dataloader_test)
 
     print('Saving predictions and targets')
-    if model.weighted:
+    if args.weighted:
         pred_path = os.path.join(args.exp_dir, '{}_{}_{}_epoch{}_{}_weighted_predictions.pt'.format(args.dataset, args.n_class, args.optim, args.epochs, os.path.basename(args.checkpoint)))
         target_path = os.path.join(args.exp_dir, '{}_{}_{}_epoch{}_{}_weighted_targets.pt'.format(args.dataset, args.n_class, args.optim, args.epochs, os.path.basename(args.checkpoint)))
     else:
