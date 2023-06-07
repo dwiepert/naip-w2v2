@@ -1,0 +1,46 @@
+{
+    "workerPoolSpecs": [
+      {
+        "machineSpec": {
+          "machineType": "n1-highmem-2",
+          "acceleratorType": "NVIDIA_TESLA_T4",
+          "acceleratorCount": 1
+        },
+        "replicaCount": "1",
+        "diskSpec": {
+          "bootDiskType": "pd-ssd",
+          "bootDiskSizeGb": 100
+        },
+        "containerSpec": {
+          "imageUri": "us-central1-docker.pkg.dev/ml-mps-aif-afdgpet01-p-6827/phi-main-us-central1-p/speech_w2v2:m144443-latest",
+          "args": [
+            "--prefix=speech_ai/speech_lake/",
+            "--study=speech_poc_freeze_1",
+            "--data_split_root=gs://ml-e107-phi-shared-aif-us-p/speech_ai/share/data_splits/amr_subject_dedup_594_train_100_test_binarized_v20220620",
+            "--label_txt=gs://ml-e107-phi-shared-aif-us-p/m144443/model_args/labels.txt",
+            "--lib=False",
+            "--checkpoint=gs://ml-e107-phi-shared-aif-us-p/m144443/checkpoints/wav2vec2-base-960h",
+            "--finetuned_mdl_path=None",
+            "--cloud=True",
+            "--cloud_dir=m144443/mayo-w2v2/test/",
+            "--mode=finetune",
+            "--weighted=False",
+            "--layer=-1",
+            "--embedding_type=ft",
+            "--batch_size=8",
+            "--num_workers=0",
+            "--learning_rate=0.0003",
+            "--epochs=3",
+            "--optim=adamw",
+            "--weight_decay=0.0001",
+            "--loss=BCE",
+            "--scheduler=onecycle",
+            "--max_lr=0.01",
+            "--final_dropout=0.3",
+            "--layernorm=False",
+            "--debug=False"
+          ]
+        }
+      }
+    ]
+  }

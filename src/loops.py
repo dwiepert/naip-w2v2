@@ -63,7 +63,7 @@ def finetune(model, dataloader_train, dataloader_val = None,
         raise ValueError('adam must be given for optimizer parameter')
     
     if sched == 'onecycle':
-        scheduler = torch.optim.lr_scheduler.OneCycleLR(optim, max_lr=max_lr, steps_per_epoch=len(dataloader_train), epochs=epochs)
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=max_lr, steps_per_epoch=len(dataloader_train), epochs=epochs)
     else:
         scheduler = None
     

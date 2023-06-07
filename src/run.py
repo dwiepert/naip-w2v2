@@ -287,7 +287,7 @@ def main():
     parser.add_argument("--final_dropout", type=float, default=0.3, help="specify dropout probability for final dropout layer in classification head")
     parser.add_argument("--layernorm", type=bool, default=False, help="specify whether to include the LayerNorm in classification head")
     #OTHER
-    parser.add_argument("--debug", default=False, type=bool)
+    parser.add_argument("--debug", default=True, type=bool)
     args = parser.parse_args()
     
     print('Torch version: ',torch.__version__)
@@ -308,7 +308,7 @@ def main():
     
     # (3) get dataset name
     if args.dataset is None:
-        if args.trained_mdl_path is None or args.mode == 'train':
+        if args.finetuned_mdl_path is None or args.mode == 'finetune':
             if '.csv' in args.data_split_root:
                 args.dataset = '{}_{}'.format(os.path.basename(os.path.dirname(args.data_split_root)), os.path.basename(args.data_split_root[:-4]))
             else:
@@ -323,7 +323,16 @@ def main():
         args.target_labels = None
         args.n_class = 0
     else:
-        with open(args.label_txt) as f:
+        if args.label_txt[:5] =='gs://':
+            label_txt = args.label_txt[5:].replace(args.bucket_name,'')[1:]
+            bn = os.path.basename(label_txt)
+            blob = bucket.blob(label_txt)
+            blob.download_to_filename(bn)
+            label_txt = bn
+        else:
+            label_txt = args.label_txt
+            
+        with open(label_txt) as f:
             target_labels = f.readlines()
         target_labels = [l.strip() for l in target_labels]
         args.target_labels = target_labels

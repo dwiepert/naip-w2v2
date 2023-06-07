@@ -1,18 +1,32 @@
 # use a Google maintained base image hosted in 
 # Google's container registry
-FROM gcr.io/deeplearning-platform-release/pytorch-gpu.1-13
+FROM us.gcr.io/ml-mps-aif-afdgpet01-p-6827/speech:latest
 
-# package dependencies
-ARG AIF_PIP_INDEX
-RUN pip install -i $AIF_PIP_INDEX --upgrade pip
-COPY requirements.txt .
-RUN pip install -i $AIF_PIP_INDEX -r requirements.txt
+# package dependencies - install requirements not included in base image
+# ARG AIF_PIP_INDEX
+# RUN pip install -i $AIF_PIP_INDEX --upgrade pip
+
+# COPY requirements.txt requirements.txt
+# RUN pip install -r requirements.txt
+
+#if you want to install with conda
+#RUN conda install -y package_name=version
 
 # copy all necessary code
-COPY ./src/run.py /
-COPY ./src/models/w2v2_models.py /
-COPY ./src/utilities/dataloader_utils.py /
-COPY labels.txt /
+#1. make src directory
+RUN mkdir /src      
+
+#2. set src as working dir
+WORKDIR /src
+
+#3. copy all files from src
+COPY ./src /src
+
+#4. set python path
+RUN export PYTHONPATH=/src/
+
+#RUN dir # for checking file list
 
 # execute the code
-ENTRYPOINT ["python", "/src/run.py"]
+#CMD ["python", "run.py"]
+ENTRYPOINT ["python", "run.py"]
