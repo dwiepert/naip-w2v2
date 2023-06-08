@@ -86,7 +86,7 @@ def finetune(model, dataloader_train, dataloader_val = None,
             loss_item = loss.item()
             training_loss.append(loss_item)
 
-        if e % 10 == 0:
+        if e % 10 == 0 or e == epochs-1:
             #SET UP LOGS
             if scheduler is not None:
                 lr = scheduler.get_last_lr()
