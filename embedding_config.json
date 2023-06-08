@@ -24,6 +24,7 @@
             "--cloud=True",
             "--cloud_dir=m144443/mayo-w2v2/test/embedding",
             "--mode=extraction",
+            "--pooling_mode=mean",
             "--weighted=False",
             "--layer=-1",
             "--embedding_type=ft",

@@ -24,6 +24,7 @@
             "--cloud=True",
             "--cloud_dir=m144443/mayo-w2v2/test/",
             "--mode=finetune",
+            "--pooling_mode=mean",
             "--weighted=False",
             "--layer=-1",
             "--batch_size=8",
