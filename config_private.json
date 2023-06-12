@@ -31,7 +31,7 @@
             "--weighted=False",
             "--layer=-1",
             "--freeze=True",
-            "--embedding_type=None",
+            "--embedding_type=ft",
             "--resample_rate=16000",
             "--reduce=True",
             "--clip_length=10.0",

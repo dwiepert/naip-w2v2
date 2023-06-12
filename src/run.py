@@ -258,8 +258,8 @@ def main():
     parser.add_argument("-c", "--checkpoint", default="wav2vec2-base-960h", help="specify path to pre-trained model weight checkpoint")
     parser.add_argument("-mp", "--finetuned_mdl_path", default=None, help='If running eval-only or extraction, you have the option to load a fine-tuned model by specifying the save path here. If passed a gs:// file, will download to local machine.')
     #GCS
-    parser.add_argument('-b','--bucket_name', default='', help="google cloud storage bucket name")
-    parser.add_argument('-p','--project_name', default='', help='google cloud platform project name')
+    parser.add_argument('-b','--bucket_name', default=None, help="google cloud storage bucket name")
+    parser.add_argument('-p','--project_name', default=None, help='google cloud platform project name')
     parser.add_argument('--cloud', default=False, type=ast.literal_eval, help="Specify whether to save everything to cloud")
     #output
     parser.add_argument("--dataset", default=None,type=str, help="When saving, the dataset arg is used to set file names. If you do not specify, it will assume the lowest directory from data_split_root")

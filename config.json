@@ -17,7 +17,7 @@
           "--prefix=TODO",
           "--study=TODO",
           "--data_split_root=TODO",
-          "--label_txt=",
+          "--label_txt=TODO",
           "--lib=False",
           "--checkpoint=TODO",
           "--finetuned_mdl_path=None",
