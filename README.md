@@ -74,7 +74,14 @@ The following parameters are accepted (`--` indicates the command line argument 
 * `resample_rate`: an integer value for resampling. Set with `--resample_rate`
 * `reduce`: a boolean indicating whether to reduce audio to monochannel. Set with `--reduce`
 * `clip_length`: float specifying how many seconds the audio should be. Will work with the 'sample_rate' of the audio to get # of frames. Set with `--clip_length`
-* `trim`: boolean specifying whether to trim beginning and end silence. Set with `--trim`
+* `tshift`: Time shifting parameter (between 0 and 1). Set with `--tshift`
+* `speed`: Speed tuning parameter (between 0 and 1). Set with `--speed`
+* `gauss_noise`: amount of gaussian noise to add (between 0 and 1). Set with `--gauss`
+* `pshift`: pitch shifting parameter (between 0 and 1). Set with `--pshift`
+* `pshiftn`: number of steps for pitch shifting. Set with `--pshiftn`
+* `gain`: gain parameter (between 0 and 1).Set with `--gain`
+* `stretch`: audio stretching parameter (between 0 and 1). Set with `--stretch`
+* `mixup`: parameter for file mixup (between 0 and 1). Set with `--mixup`
 
 ## Arguments
 There are many possible arguments to set, including all the parameters associated with audio configuration. The main run function describes most of these, and you can alter defaults as required. 
@@ -140,6 +147,8 @@ There are a few different parameters to consider. Firstly, the classification he
 Default run mode will also freeze the base W2V2 model and only finetune the classification head. This can be altered with `--freeze`. 
 
 We also include the option to use a different hidden state output as the input to the classification head. This can be specified with `--layer` and must be an integer between 0 and `model.n_states` (or -1 to get the final layer). This works in the `W2V2ForSpeechClassification` class by getting a list of hidden states and indexing using the `layer` parameter. 
+
+Additionally, we have data augmentation transforms available for finetuning, such as time shift, speed tuning, adding noise, pitch shift, gain, stretching audio, and audio mixup. 
 
 Finally, we added functionality to train an additional parameter to learn weights for the contribution of each hidden state to classification. The weights can be accessed with `model.weightsum`. This mode is triggered by setting `--weighted` to True. If initializing a model outside of the run function, it is still triggered with an argument called `weighted`. 
 

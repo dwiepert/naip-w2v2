@@ -2,7 +2,7 @@
 W2V2 run function
 Performs fine-tuning of a classification head, evaluation, or embedding extraction. 
 
-Last modified: 05/2023
+Last modified: 06/2023
 Author: Daniela Wiepert
 Email: wiepert.daniela@mayo.edu
 File: run.py
@@ -53,8 +53,9 @@ def get_embeddings(args):
         annotations_df = annotations_df.iloc[0:8,:]
 
     # (2) set up audio configuration for transforms
-    audio_conf = {'checkpoint': args.checkpoint, 'resample_rate':args.resample_rate, 'reduce': args.reduce,
-                  'trim': args.trim, 'clip_length': args.clip_length}
+    audio_conf = {'checkpoint': model_args.checkpoint, 'resample_rate':args.resample_rate, 'reduce': args.reduce, 'clip_length': args.clip_length,
+                  'tshift':0, 'speed':0, 'gauss_noise':0, 'pshift':0, 'pshiftn':0, 'gain':0, 'stretch': 0, 'mixup':0}
+    
     
     # (3) set up dataloaders
     waveform_dataset = W2V2Dataset(annotations_df = annotations_df, target_labels = args.target_labels,
@@ -123,20 +124,23 @@ def finetune_w2v2(args):
         test_df = test_df.iloc[0:8,:]
 
     # (2) set up audio configuration for transforms
-    audio_conf = {'checkpoint': args.checkpoint, 'resample_rate':args.resample_rate, 'reduce': args.reduce,
-                  'trim': args.trim, 'clip_length': args.clip_length}
+    train_audio_conf = {'checkpoint': args.checkpoint, 'resample_rate':args.resample_rate, 'reduce': args.reduce, 'clip_length': args.clip_length,
+                        'tshift':args.tshift, 'speed':args.speed, 'gauss_noise':args.gauss, 'pshift':args.pshift, 'pshiftn':args.pshiftn, 'gain':args.gain, 'stretch': args.stretch, 'mixup':args.mixup}
     
+    eval_audio_conf = {'checkpoint': args.checkpoint, 'resample_rate':args.resample_rate, 'reduce': args.reduce, 'clip_length': args.clip_length,
+                  'tshift':0, 'speed':0, 'gauss_noise':0, 'pshift':0, 'pshiftn':0, 'gain':0, 'stretch': 0, 'mixup':0}
 
+    
     # (3) set up datasets and dataloaders
     dataset_train = W2V2Dataset(train_df, target_labels = args.target_labels,
-                                audio_conf = audio_conf, prefix=args.prefix, bucket=args.bucket, librosa=args.lib)
+                                audio_conf = train_audio_conf, prefix=args.prefix, bucket=args.bucket, librosa=args.lib)
     dataset_val = W2V2Dataset(val_df, target_labels = args.target_labels,
-                              audio_conf = audio_conf, prefix=args.prefix, bucket=args.bucket, librosa=args.lib)
+                              audio_conf = eval_audio_conf, prefix=args.prefix, bucket=args.bucket, librosa=args.lib)
     dataset_test = W2V2Dataset(test_df, target_labels = args.target_labels,
-                               audio_conf = audio_conf, prefix=args.prefix, bucket=args.bucket, librosa=args.lib)
+                               audio_conf = eval_audio_conf, prefix=args.prefix, bucket=args.bucket, librosa=args.lib)
 
     dataloader_train = DataLoader(dataset_train, batch_size = args.batch_size, shuffle = True, num_workers = args.num_workers)
-    dataloader_val= DataLoader(dataset_val, batch_size = 1, shuffle = False, num_workers = args.num_workers)
+    dataloader_val= DataLoader(dataset_val, batch_size = args.batch_size, shuffle = False, num_workers = args.num_workers)
     dataloader_test= DataLoader(dataset_test, batch_size = args.batch_size, shuffle = False, num_workers = args.num_workers)
     #dataloader_test = DataLoader(dataset_test, batch_size = len(diag_test), shuffle = False, num_workers = args.num_workers)
 
@@ -209,9 +213,9 @@ def eval_only(args):
         eval_df = eval_df.iloc[0:8,:]
 
     # (2) set up audio configuration for transforms
-    audio_conf = {'checkpoint': args.checkpoint, 'resample_rate':args.resample_rate, 'reduce': args.reduce,
-                  'trim': args.trim, 'clip_length': args.clip_length}
-    
+    audio_conf = {'checkpoint': model_args.checkpoint, 'resample_rate':model_args.resample_rate, 'reduce': model_args.reduce, 'clip_length': model_args.clip_length,
+                  'tshift':0, 'speed':0, 'gauss_noise':0, 'pshift':0, 'pshiftn':0, 'gain':0, 'stretch': 0, 'mixup':0}
+
     # (3) set up datasets and dataloaders
     dataset_eval = W2V2Dataset(eval_df, target_labels = model_args.target_labels,
                                audio_conf = audio_conf, prefix=args.prefix, bucket=args.bucket, librosa=args.lib)
@@ -246,16 +250,16 @@ def eval_only(args):
 def main():
     parser = argparse.ArgumentParser()
     #Inputs
-    parser.add_argument('-i','--prefix',default='speech_ai/speech_lake/', help='Input directory or location in google cloud storage bucket containing files to load')
-    parser.add_argument("-s", "--study", choices = ['r01_prelim','speech_poc_freeze_1', None], default='speech_poc_freeze_1', help="specify study name")
-    parser.add_argument("-d", "--data_split_root", default='gs://ml-e107-phi-shared-aif-us-p/speech_ai/share/data_splits/amr_subject_dedup_594_train_100_test_binarized_v20220620', help="specify file path where datasplit is located. If you give a full file path to classification, an error will be thrown. On the other hand, evaluation and embedding expects a single .csv file.")
+    parser.add_argument('-i','--prefix',default='', help='Input directory or location in google cloud storage bucket containing files to load')
+    parser.add_argument("-s", "--study", default=None, help="specify study name")
+    parser.add_argument("-d", "--data_split_root", default='', help="specify file path where datasplit is located. If you give a full file path to classification, an error will be thrown. On the other hand, evaluation and embedding expects a single .csv file.")
     parser.add_argument('-l','--label_txt', default='./labels.txt') #default=None #default='./labels.txt'
     parser.add_argument('--lib', default=False, type=ast.literal_eval, help="Specify whether to load using librosa as compared to torch audio")
-    parser.add_argument("-c", "--checkpoint", default="gs://ml-e107-phi-shared-aif-us-p/m144443/checkpoints/wav2vec2-base-960h", help="specify path to pre-trained model weight checkpoint")
+    parser.add_argument("-c", "--checkpoint", default="wav2vec2-base-960h", help="specify path to pre-trained model weight checkpoint")
     parser.add_argument("-mp", "--finetuned_mdl_path", default=None, help='If running eval-only or extraction, you have the option to load a fine-tuned model by specifying the save path here. If passed a gs:// file, will download to local machine.')
     #GCS
-    parser.add_argument('-b','--bucket_name', default='ml-e107-phi-shared-aif-us-p', help="google cloud storage bucket name")
-    parser.add_argument('-p','--project_name', default='ml-mps-aif-afdgpet01-p-6827', help='google cloud platform project name')
+    parser.add_argument('-b','--bucket_name', default='', help="google cloud storage bucket name")
+    parser.add_argument('-p','--project_name', default='', help='google cloud platform project name')
     parser.add_argument('--cloud', default=False, type=ast.literal_eval, help="Specify whether to save everything to cloud")
     #output
     parser.add_argument("--dataset", default=None,type=str, help="When saving, the dataset arg is used to set file names. If you do not specify, it will assume the lowest directory from data_split_root")
@@ -266,12 +270,19 @@ def main():
     parser.add_argument("--weighted", type=ast.literal_eval, default=False, help="specify whether to learn a weighted sum of layers for classification")
     parser.add_argument("--layer", default=-1, type=int, help="specify which hidden state is being used. It can be between -1 and 12")
     parser.add_argument("--freeze", type=ast.literal_eval, default=True, help='specify whether to freeze the base model')
-    parser.add_argument('--embedding_type', type=str, default='ft', help='specify whether embeddings should be extracted from classification head (ft) or base pretrained model (pt)', choices=['ft','pt', 'wt'])
+    parser.add_argument('--embedding_type', type=str, default=None, help='specify whether embeddings should be extracted from classification head (ft) or base pretrained model (pt)', choices=['ft','pt', 'wt', None])
     #Audio transforms
     parser.add_argument("--resample_rate", default=16000,type=int, help='resample rate for audio files')
     parser.add_argument("--reduce", default=True, type=ast.literal_eval, help="Specify whether to reduce to monochannel")
-    parser.add_argument("--clip_length", default=10.0, type=int, help="If truncating audio, specify clip length in seconds. 0 = no truncation")
-    parser.add_argument("--trim", default=False, type=int, help="trim silence")
+    parser.add_argument("--clip_length", default=10.0, type=float, help="If truncating audio, specify clip length in seconds. 0 = no truncation")
+    parser.add_argument("--tshift", default=0, type=float, help="Specify p for time shift transformation")
+    parser.add_argument("--speed", default=0, type=float, help="Specify p for speed tuning")
+    parser.add_argument("--gauss", default=0, type=float, help="Specify p for adding gaussian noise")
+    parser.add_argument("--pshift", default=0, type=float, help="Specify p for pitch shifting")
+    parser.add_argument("--pshiftn", default=0, type=float, help="Specify number of steps for pitch shifting")
+    parser.add_argument("--gain", default=0, type=float, help="Specify p for gain")
+    parser.add_argument("--stretch", default=0, type=float, help="Specify p for audio stretching")
+    parser.add_argument("--mixup", type=float, default=0, help="how many (0-1) samples need to be mixup during training")
     #Model parameters
     parser.add_argument("-pm", "--pooling_mode", default="mean", help="specify method of pooling last hidden layer", choices=['mean','sum','max'])
     parser.add_argument("-bs", "--batch_size", type=int, default=8, help="specify batch size")
@@ -281,10 +292,10 @@ def main():
     parser.add_argument("--optim", type=str, default="adamw", help="training optimizer", choices=["adam", "adamw"])
     parser.add_argument("--weight_decay", type=float, default=.0001, help='specify weight decay for adamw')
     parser.add_argument("--loss", type=str, default="BCE", help="the loss function for finetuning, depend on the task", choices=["MSE", "BCE"])
-    parser.add_argument("--scheduler", type=str, default="onecycle", help="specify lr scheduler", choices=["onecycle", None])
+    parser.add_argument("--scheduler", type=str, default="None", help="specify lr scheduler", choices=["onecycle", None])
     parser.add_argument("--max_lr", type=float, default=0.01, help="specify max lr for lr scheduler")
     #classification head parameters
-    parser.add_argument("--activation", type=str, default='relu', help="specify activation function to use for classification head")
+    parser.add_argument("--activation", type=str, default='relu',choices=["relu"], help="specify activation function to use for classification head")
     parser.add_argument("--final_dropout", type=float, default=0.3, help="specify dropout probability for final dropout layer in classification head")
     parser.add_argument("--layernorm", type=ast.literal_eval, default=False, help="specify whether to include the LayerNorm in classification head")
     #OTHER
@@ -372,7 +383,6 @@ def main():
     args.bucket = bucket
 
     # (10) run model
-    print(args.mode)
     if args.mode == "finetune":
         finetune_w2v2(args)
 
@@ -380,6 +390,7 @@ def main():
         eval_only(args)
               
     elif args.mode == "extraction":
+        assert args.embedding_type is not None, "Embedding type not given. Please give one of [ft, pt, wt]"
         df_embed = get_embeddings(args)
     
 if __name__ == "__main__":

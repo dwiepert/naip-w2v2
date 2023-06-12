@@ -1,0 +1,64 @@
+{
+  "workerPoolSpecs": [
+    {
+      "machineSpec": {
+        "machineType": "n1-highmem-2",
+        "acceleratorType": "NVIDIA_TESLA_T4",
+        "acceleratorCount": 1
+      },
+      "replicaCount": "1",
+      "diskSpec": {
+        "bootDiskType": "pd-ssd",
+        "bootDiskSizeGb": 100
+      },
+      "containerSpec": {
+        "imageUri": "TODO", 
+        "args": [
+          "--prefix=TODO",
+          "--study=TODO",
+          "--data_split_root=TODO",
+          "--label_txt=",
+          "--lib=False",
+          "--checkpoint=TODO",
+          "--finetuned_mdl_path=None",
+          "--bucket_name=TODO",
+          "--project_name=TODO",
+          "--cloud=True",
+          "--dataset=None",
+          "--exp_dir=./experiments",
+          "--cloud_dir=TODO",
+          "--mode=finetune",
+          "--weighted=False",
+          "--layer=-1",
+          "--freeze=True",
+          "--embedding_type=None",
+          "--resample_rate=16000",
+          "--reduce=True",
+          "--clip_length=10.0",
+          "--tshift=0",
+          "--speed=0",
+          "--gauss=0",
+          "--pshift=0",
+          "--pshiftn=0",
+          "--gain=0",
+          "--stretch=0",
+          "--mixup=0",
+          "--pooling_mode=mean",
+          "--batch_size=8",
+          "--num_workers=0",
+          "--learning_rate=0.0001",
+          "--epochs=20",
+          "--optim=adamw",
+          "--weight_decay=0.0001",
+          "--loss=BCE",
+          "--scheduler=onecycle",
+          "--max_lr=0.01",
+          "--activation=relu",
+          "--final_dropout=0.3",
+          "--layernorm=False",
+          "--debug=False"
+        ]
+      }
+    }
+  ]
+}
