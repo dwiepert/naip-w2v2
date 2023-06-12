@@ -17,8 +17,6 @@ The environment must include the following packages, all of which can be dowload
 If running on your local machine and not in a GCP environment, you will also need to install:
 * google-cloud-storage
 
-The [requirements.txt](https://github.com/dwiepert/mayo-w2v2/blob/main/requirements.txt) can be used to set up this environment. 
-
 To access data stored in GCS on your local machine, you will need to additionally run
 
 ```gcloud auth application-default login```
