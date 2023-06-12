@@ -24,7 +24,7 @@
           "--bucket_name=TODO",
           "--project_name=TODO",
           "--cloud=True",
-          "--dataset=None",
+          "--dataset=TODO",
           "--exp_dir=./experiments",
           "--cloud_dir=TODO",
           "--mode=finetune",
