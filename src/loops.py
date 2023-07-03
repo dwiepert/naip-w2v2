@@ -1,7 +1,7 @@
 """
 Model loops for finetuning and extracting embeddings from W2V2 models
 
-Last modified: 05/2023
+Last modified: 07/2023
 Author: Daniela Wiepert
 Email: wiepert.daniela@mayo.edu
 File: loops.py
@@ -195,9 +195,10 @@ def embedding_extraction(model, dataloader,embedding_type='ft',layer=-1, pooling
     Run a specific subtype of evaluation for getting embeddings.
     :param model: W2V2 model
     :param dataloader_eval: dataloader object with data to get embeddings for
-    :param embedding_type: string specifying whether embeddings should be extracted from classification head (ft) or base pretrained model (pt)
-    :return embeddings: an np array containing the embeddings
+    :param embedding_type: string specifying whether embeddings should be extracted from classification head (ft) or base pretrained model (pt) 
     :param layer: hidden layer to take out and do results for - must be between 0-12
+    :param pooling_mode: method of pooling embeddings if required ("mean" or "sum")
+    :return embeddings: an np array containing the embeddings
     """
     print('Getting embeddings')
     embeddings = np.array([])

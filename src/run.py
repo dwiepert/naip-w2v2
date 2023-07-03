@@ -2,7 +2,7 @@
 W2V2 run function
 Performs fine-tuning of a classification head, evaluation, or embedding extraction. 
 
-Last modified: 06/2023
+Last modified: 07/2023
 Author: Daniela Wiepert
 Email: wiepert.daniela@mayo.edu
 File: run.py
@@ -12,6 +12,7 @@ File: run.py
 #built-in
 import argparse
 import ast
+import itertools
 import os
 import pickle
 
@@ -65,8 +66,9 @@ def get_embeddings(args):
     
     # (4) set up embedding model
     model = Wav2Vec2ForSpeechClassification(checkpoint=model_args.checkpoint, label_dim = model_args.n_class, pooling_mode = model_args.pooling_mode, 
-                                            freeze=model_args.freeze, activation=model_args.activation, final_dropout=model_args.final_dropout, 
-                                            layernorm=model_args.layernorm, weighted=model_args.weighted, layer=model_args.layer)   #should look like the finetuned model (so using model_args). If pretrained model, will resort to current args
+                                            freeze=model_args.freeze, weighted=model_args.weighted, layer=model_args.layer, shared_dense=model_args.shared_dense,
+                                            sd_bottleneck=model_args.sd_bottleneck, clf_bottleneck=model_args.clf_bottleneck, activation=model_args.activation, 
+                                            final_dropout=model_args.final_dropout, layernorm=model_args.layernorm)   #should look like the finetuned model (so using model_args). If pretrained model, will resort to current args
     
     if args.finetuned_mdl_path is not None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -88,9 +90,10 @@ def get_embeddings(args):
         args.layer='NA'
     elif args.layer==-1:
         args.layer='Final'
+    path = '{}/{}_embedlayer{}_{}_{}_embeddings'.format(args.exp_dir, args.dataset, args.layer, args.pooling_mode,args.embedding_type)
 
     try:
-        pqt_path = '{}/{}_embedlayer{}_{}_{}_embeddings.pqt'.format(args.exp_dir, args.dataset, args.layer, args.pooling_mode,args.embedding_type)
+        pqt_path = path + '.pqt'
         
         df_embed.to_parquet(path=pqt_path, index=True, engine='pyarrow') #TODO: fix
 
@@ -98,8 +101,7 @@ def get_embeddings(args):
             upload(args.cloud_dir, pqt_path, args.bucket)
     except:
         print('Unable to save as pqt, saving instead as csv')
-        csv_path = '{}/{}_embedlayer{}_{}_{}_embeddings.csv'.format(args.exp_dir, args.dataset, args.layer, args.pooling_mode,args.embedding_type)
-        
+        csv_path = path + '.csv'
         df_embed.to_csv(csv_path, index=True)
 
         if args.cloud:
@@ -146,8 +148,9 @@ def finetune_w2v2(args):
 
     # (4) initialize model
     model = Wav2Vec2ForSpeechClassification(checkpoint=args.checkpoint, label_dim = args.n_class, pooling_mode = args.pooling_mode, 
-                                            freeze=args.freeze, activation=args.activation, final_dropout=args.final_dropout, 
-                                            layernorm=args.layernorm, weighted=args.weighted, layer=args.layer)    
+                                            freeze=args.freeze, weighted=args.weighted, layer=args.layer, shared_dense=args.shared_dense,
+                                            sd_bottleneck=args.sd_bottleneck, clf_bottleneck=args.clf_bottleneck, activation=args.activation, final_dropout=args.final_dropout, 
+                                            layernorm=args.layernorm)    
     
     # (5) start fine-tuning classification
     model = finetune(model, dataloader_train, dataloader_val,
@@ -157,12 +160,19 @@ def finetune_w2v2(args):
 
     print('Saving final epoch')
 
+    path = os.path.join(args.exp_dir, '{}_{}_{}_epoch{}_{}_clf{}'.format(args.dataset, np.sum(args.n_class), args.optim, args.epochs, os.path.basename(args.checkpoint), len(args.n_class)))
+    
+    if args.shared_dense:
+        path += "_sd"
     if args.weighted:
-        mdl_path = os.path.join(args.exp_dir, '{}_{}_{}_epoch{}_{}_weighted_mdl.pt'.format(args.dataset, args.n_class, args.optim, args.epochs, os.path.basename(args.checkpoint)))
+        path += "weighted"
     else:
         if args.layer==-1:
             args.layer='Final'
-        mdl_path = os.path.join(args.exp_dir, '{}_{}_{}_layer{}_epoch{}_{}_mdl.pt'.format(args.dataset, args.n_class, args.optim, args.layer, args.epochs, os.path.basename(args.checkpoint)))
+        path += "_{}".format(args.layer)
+
+
+    mdl_path = path + '_mdl.pt'
     torch.save(model.state_dict(), mdl_path)
 
     if args.cloud:
@@ -172,15 +182,11 @@ def finetune_w2v2(args):
     preds, targets = evaluation(model, dataloader_test)
 
     print('Saving predictions and targets')
-    if args.weighted:
-        pred_path = os.path.join(args.exp_dir, '{}_{}_{}_epoch{}_{}_weighted_predictions.pt'.format(args.dataset, args.n_class, args.optim, args.epochs, os.path.basename(args.checkpoint)))
-        target_path = os.path.join(args.exp_dir, '{}_{}_{}_epoch{}_{}_weighted_targets.pt'.format(args.dataset, args.n_class, args.optim, args.epochs, os.path.basename(args.checkpoint)))
-    else:
-        if args.layer==-1:
-            args.layer='Final'
-        pred_path = os.path.join(args.exp_dir, '{}_{}_{}_layer{}_epoch{}_{}_predictions.pt'.format(args.dataset, args.n_class, args.optim, args.layer, args.epochs, os.path.basename(args.checkpoint)))
-        target_path = os.path.join(args.exp_dir, '{}_{}_{}_layer{}_epoch{}_{}_targets.pt'.format(args.dataset, args.n_class, args.optim, args.layer, args.epochs, os.path.basename(args.checkpoint)))
 
+    
+    pred_path = path + "_predictions.pt"
+    target_path = path + "_targets.pt"
+    
     torch.save(preds, pred_path)
     torch.save(targets, target_path)
 
@@ -225,8 +231,9 @@ def eval_only(args):
 
     # (4) initialize model
     model = Wav2Vec2ForSpeechClassification(checkpoint=model_args.checkpoint, label_dim = model_args.n_class, pooling_mode = model_args.pooling_mode, 
-                                            freeze=model_args.freeze, activation=model_args.activation, final_dropout=model_args.final_dropout, 
-                                            layernorm=model_args.layernorm, weighted=model_args.weighted, layer=model_args.layer)    
+                                            freeze=model_args.freeze, weighted=model_args.weighted, layer=model_args.layer, shared_dense=model_args.shared_dense,
+                                            sd_bottleneck=model_args.sd_bottleneck, clf_bottleneck=model_args.clf_bottleneck, activation=model_args.activation, 
+                                            final_dropout=model_args.final_dropout, layernorm=model_args.layernorm)    
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     sd = torch.load(args.finetuned_mdl_path, map_location=device)
     model.load_state_dict(sd, strict=False)
@@ -270,7 +277,9 @@ def main():
     parser.add_argument("--weighted", type=ast.literal_eval, default=False, help="specify whether to learn a weighted sum of layers for classification")
     parser.add_argument("--layer", default=-1, type=int, help="specify which hidden state is being used. It can be between -1 and 12")
     parser.add_argument("--freeze", type=ast.literal_eval, default=True, help='specify whether to freeze the base model')
-    parser.add_argument('--embedding_type', type=str, default=None, help='specify whether embeddings should be extracted from classification head (ft) or base pretrained model (pt)', choices=['ft','pt', 'wt', None])
+    parser.add_argument("--shared_dense", type=ast.literal_eval, default=False, help="specify whether to add an additional shared dense layer before the classifier(s)")
+    parser.add_argument("--sd_bottleneck", type=int, default=768, help="specify whether to decrease when using shared_dense layer")
+    parser.add_argument('--embedding_type', type=str, default=None, help='specify whether embeddings should be extracted from classification head (ft), base pretrained model (pt), weighted sum (wt),or shared dense layer (st)', choices=['ft','pt', 'wt', 'st', None])
     #Audio transforms
     parser.add_argument("--resample_rate", default=16000,type=int, help='resample rate for audio files')
     parser.add_argument("--reduce", default=True, type=ast.literal_eval, help="Specify whether to reduce to monochannel")
@@ -298,6 +307,7 @@ def main():
     parser.add_argument("--activation", type=str, default='relu',choices=["relu"], help="specify activation function to use for classification head")
     parser.add_argument("--final_dropout", type=float, default=0.3, help="specify dropout probability for final dropout layer in classification head")
     parser.add_argument("--layernorm", type=ast.literal_eval, default=False, help="specify whether to include the LayerNorm in classification head")
+    parser.add_argument("--clf_bottleneck", type=int, default=768, help="specify whether to apply a bottleneck to initial classifier dense layer")
     #OTHER
     parser.add_argument("--debug", default=True, type=ast.literal_eval)
     args = parser.parse_args()
@@ -335,7 +345,8 @@ def main():
     if args.label_txt is None:
         assert args.mode == 'extraction', 'Must give a txt with target labels for training or evaluating.'
         args.target_labels = None
-        args.n_class = 0
+        args.label_groups = None
+        args.n_class = []
     else:
         if args.label_txt[:5] =='gs://':
             label_txt = args.label_txt[5:].replace(args.bucket_name,'')[1:]
@@ -348,12 +359,12 @@ def main():
             
         with open(label_txt) as f:
             target_labels = f.readlines()
-        target_labels = [l.strip() for l in target_labels]
-        args.target_labels = target_labels
+        target_labels = [l.strip().split(sep=",") for l in target_labels]
+        args.label_groups = target_labels 
+        args.target_labels = list(itertools.chain.from_iterable(target_labels))
+        args.n_class = [len(l) for l in args.label_groups]
 
-        args.n_class = len(target_labels)
-
-        if args.n_class == 0:
+        if args.n_class == []:
             assert args.mode == 'extraction', 'Target labels must be given for training or evaluating. Txt file was empty.'
 
     # (5) check if output directory exists, SHOULD NOT BE A GS:// path

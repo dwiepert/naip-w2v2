@@ -88,7 +88,7 @@ There are many possible arguments to set, including all the parameters associate
 * `-i, --prefix`: sets the `prefix` or input directory. Compatible with both local and GCS bucket directories containing audio files, though do not include 'gs://'
 * `-s, --study`: optionally set the study. You can either include a full path to the study in the `prefix` arg or specify some parent directory in the `prefix` arg containing more than one study and further specify which study to select here.
 * `-d, --data_split_root`: sets the `data_split_root` directory or a full path to a single csv file. For classification, it must be  a directory containing a train.csv and test.csv of file names. If runnning embedding extraction, it should be a csv file. Running evaluation only can accept either a directory or a csv file. This path should include 'gs://' if it is located in a bucket. 
-* `-l, --label_txt`: sets the `label_txt` path. This is a full file path to a .txt file contain a list of the target labels for selection (see [labels.txt](https://github.com/dwiepert/mayo-ssast/blob/main/labels.txt)). If stored in a bucket it If it is empty, it will require that embedding extraction be running.
+* `-l, --label_txt`: sets the `label_txt` path. This is a full file path to a .txt file contain a list of the target labels for selection (see [labels.txt](https://github.com/dwiepert/mayo-w2v2/blob/main/labels.txt). Features in same classifier group should be split by ',', each feature classifier group should be split by '/n'). If stored in a bucket it If it is empty, it will require that embedding extraction be running.
 * `--lib`: : specifies whether to load using librosa (True) or torchaudio (False), default=False
 * `-c, --checkpoint`: specify a pretrained model checkpoint - this is a base model from w2v2, as mentioned earlier. Default is 'facebook/wav2vec2-base-960h' which is a base model trained on 960h of Librispeech. This is required regardless of whether you include a fine-tuned model path. If using a checkpoint stored on GCS, make sure it starts with 'gs://'
 * `-mp, --finetuned_mdl_path`: if running eval-only or extraction, you can specify a fine-tuned model to load in. This can either be a local path of a 'gs://' path, that latter of which will trigger the code to download the specified model path to the local machine. 
@@ -108,7 +108,9 @@ There are many possible arguments to set, including all the parameters associate
 * `--freeze`: boolean to specify whether to freeze the base model
 * `--weighted`: boolean to trigger learning weights for hidden states
 * `--layer`: Specify which model layer (hidden state) output to use. Default is -1 which is the final layer. 
-* `--embedding_type`: specify whether embeddings should be extracted from classification head (ft) or base pretrained model (pt)
+* `--shared_dense`: specify whether to include a shared dense layer
+* `--sd_bottleneck`: specify bottleneck for shared dense layer
+* `--embedding_type`: specify whether embeddings should be extracted from classification head (ft), base pretrained model (pt), weighted model output (wt), or shared dense layer (st)
 
 ### Audio transforms
 see the audio configurations section for which arguments to set
@@ -129,6 +131,7 @@ see the audio configurations section for which arguments to set
 * `--activation`: specify activation function to use for classification head
 * `--final_dropout`: specify dropout probability for final dropout layer in classification head
 * `--layernorm`: specify whether to include the LayerNorm in classification head
+* `--clf_bottleneck`: specify bottleneck for classifier initial dense layer
 
 For more information on arguments, you can also run `python run.py -h`. 
 
@@ -144,9 +147,13 @@ There are a few different parameters to consider. Firstly, the classification he
 
 Default run mode will also freeze the base W2V2 model and only finetune the classification head. This can be altered with `--freeze`. 
 
-We also include the option to use a different hidden state output as the input to the classification head. This can be specified with `--layer` and must be an integer between 0 and `model.n_states` (or -1 to get the final layer). This works in the `W2V2ForSpeechClassification` class by getting a list of hidden states and indexing using the `layer` parameter. 
+We also include the option to use a different hidden state output as the input to the classification head. This can be specified with `--layer` and must be an integer between 0 and `model.n_states` (or -1 to get the final layer). This works in the `W2V2ForSpeechClassification` class by getting a list of hidden states and indexing using the `layer` parameter. Additionally, you can add a shared dense layer prior to the classification head(s) by specifying  `--shared_dense` along with `--sd_bottleneck` to designate the output size for the shared dense layer. 
 
-Additionally, there are data augmentation transforms available for finetuning, such as time shift, speed tuning, adding noise, pitch shift, gain, stretching audio, and audio mixup. 
+Classification head(s) can be implemented in the following manner:
+1. Specify `--clf_bottleneck` to designate output for initial linear layer 
+2. Give `label_dims` as a list of dimensions or a single int. If given as a list, it will make a number of classifiers equal to the number of dimensions given, with each dimension indicating the output size of the classifier (e.g. [2, 1] will make a classifier with an output of (batch_size, 2) and one with an output of (batch_size, 1). The outputs then need to be stacked by columns to make one combined prediction). In order to do this in `run.py`, you must give a label_txt in the following format: split labels with a ',' to specify a group of features to be fed to one classifier; split with a new line '/n' to specify a new classifier. Note that `args.target_labels` should be a flat list of features, but `args.label_groups` should be a list of lists. 
+
+There are data augmentation transforms available for finetuning, such as time shift, speed tuning, adding noise, pitch shift, gain, stretching audio, and audio mixup. 
 
 Finally, we added functionality to train an additional parameter to learn weights for the contribution of each hidden state to classification. The weights can be accessed with `model.weightsum`. This mode is triggered by setting `--weighted` to True. If initializing a model outside of the run function, it is still triggered with an argument called `weighted`. 
 
@@ -163,7 +170,8 @@ Embedding extraction is triggered by setting `-m, --mode` to 'extraction'.
 You must also consider where you want the embeddings to be extracted from. The options are as follows:
 1. From the output of a hidden state? Set `embedding_type` to 'pt'. Can further set an exact hidden state with the `layer` argument. By default, it will use the layer specified at the time of model initialization. The model default is to give the last hidden state run through a normalization layer, so the embedding is this output merged to be of size (batch size, embedding_dim). It will also automatically use the merging strategy defined by the mode set at the time of model initialization, but this can be changed at the time of embedding extraction by redefining `pooling_mode`.
 2. After weighting the hidden states? Set `embedding_type` to 'wt'. This version requires that the model was initially finetuned with  `weighted` set to True.
-3. From a layer in the classification head that has been finetuned? Set `embedding_type` to 'ft'. This version requires no further specification and will always return the output from the first dense layer in the classification head, prior to any activation function or normalization. 
+3. After a shared dense layer? Set `embedding_type` to 'st'. This version requires that the model was initially finetuned with `shared_dense` set to True.
+4. From a layer in the classification head that has been finetuned? Set `embedding_type` to 'ft'. This version requires specification of `pooling_mode` to merge embeddings if there are multiple classifiers. It only accepts "mean" or "sum" for merging, and if nothing is specified it will use the pooling_mode set with the model. It will always return the output from the first dense layer in the classification head, prior to any activation function or normalization. 
 
 Brief note on target labels:
 Embedding extraction is the only mode where target labels are not required. You can give None or an empty list or np.array and it will still function and extract embeddings.

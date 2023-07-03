@@ -29,6 +29,8 @@
           "--cloud_dir=TODO",
           "--mode=finetune",
           "--weighted=False",
+          "--shared_dense=False",
+          "--sd_bottleneck=768",
           "--layer=-1",
           "--freeze=True",
           "--embedding_type=None",
@@ -56,6 +58,7 @@
           "--activation=relu",
           "--final_dropout=0.3",
           "--layernorm=False",
+          "--clf_bottleneck=768",
           "--debug=False"
         ]
       }

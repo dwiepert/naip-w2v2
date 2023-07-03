@@ -3,7 +3,7 @@ W2V2 model classes
 
 Base w2v2 models from HuggingFace.
 
-Last modified: 05/2023
+Last modified: 07/2023
 Author: Daniela Wiepert
 Email: wiepert.daniela@mayo.edu
 File: w2v2_models.py
@@ -68,22 +68,27 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
     Source: https://colab.research.google.com/github/m3hrdadfi/soxan/blob/main/notebooks/Eating_Sound_Collection_using_Wav2Vec2.ipynb#scrollTo=Fv62ShDsH5DZ
     """
     def __init__(self, checkpoint, label_dim=5, pooling_mode='mean', 
-                 freeze=True, activation='relu', final_dropout=0.2, layernorm=False, 
-                 weighted=False, layer=-1):
+                 freeze=True, weighted=False, layer=-1, shared_dense=False, sd_bottleneck=768,
+                 clf_bottleneck=150, activation='relu', final_dropout=0.3, layernorm=False):
         """
         :param checkpoint: path to where model checkpoint is saved (str)
-        :param label_dim: specify number of categories to classify
+        :param label_dim: specify number of categories to classify - expects either a single number or a list of numbers
         :param pooling_mode: specify which method of pooling from ['mean', 'sum', 'max'] (str)
         :param freeze: specify whether to freeze the pretrained model parameters
+        :param weighted: specify which mode to run as the forward function (False: forward for a single hidden layer, True: weighted layer sum)
+        :param layer: layer for single hidden layer extraction
+        :param shared_dense: specify whether to add a shared dense layer before classification head
+        :param sd_bottleneck: size to reduce to in shared dense layer
+        :param clf_bottleneck: size to reduce to in intial classifier dense layer
         :param activation: activation function for classification head
         :param final_dropout: amount of dropout to use in classification head
         :param layernorm: include layer normalization in classification head
-        :param weighted: specify which mode to run as the forward function (False: forward for a single hidden layer, True: weighted layer sum)
-        :param layer: layer for single hidden layer extraction
         """
         super(Wav2Vec2ForSpeechClassification, self).__init__()
         self.label_dim = label_dim
         self.pooling_mode = pooling_mode
+        self.sd_bottleneck=sd_bottleneck
+        self.clf_bottleneck = clf_bottleneck
 
         self.model = AutoModelForAudioClassification.from_pretrained(checkpoint,config=AutoConfig.from_pretrained(checkpoint, output_attentions=True,output_hidden_states=True))
        
@@ -92,8 +97,15 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
             for param in self.model.parameters():
                 param.requires_grad = False
 
-        #if weighting each layer for classification, set up a random vector of size # hidden states (13)
         self.n_states, self.embedding_dim = self._get_shape()
+
+        #adding a shared dense layer
+        self.shared_dense = shared_dense
+        if self.shared_dense:
+            self.dense = nn.Linear(self.embedding_dim, self.sd_bottleneck)
+            self.clf_input = self.sd_bottleneck
+        else:
+            self.clf_input = self.embedding_dim
     
         assert layer >= -1 and layer < self.n_states, f'invalid layer" {layer}. Layer must either be -1 for final layer, or a number between 0 and {self.n_states}'
         self.layer = layer
@@ -104,8 +116,19 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
         else:
             self.weightsum=torch.ones(self.n_states)/self.n_states
 
-        self.classifier = ClassificationHead(self.embedding_dim,self.label_dim,
-                                             activation=activation, final_dropout=final_dropout,layernorm=layernorm)
+        #check if a list or a single number
+        self.classifiers = []
+        if isinstance(self.label_dim, list):
+            for dim in self.label_dim:
+                self.classifiers.append(ClassificationHead(input_size=self.clf_input, bottleneck=self.clf_bottleneck, output_size=dim,
+                                             activation=activation, final_dropout=final_dropout,layernorm=layernorm))
+        else:
+            self.classifiers.append(ClassificationHead(input_size=self.clf_input, bottleneck=self.clf_bottleneck, output_size=self.label_dim,
+                                             activation=activation, final_dropout=final_dropout,layernorm=layernorm))
+            
+        self.classifiers = nn.ModuleList(self.classifiers)
+        
+        
         
     def _get_shape(self):
         """
@@ -201,6 +224,9 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
         """
         ## EMBEDDING 'ft': extract from finetuned classification head
         if embedding_type == 'ft':
+            if pooling_mode is None:
+                pooling_mode = self.pooling_mode
+            assert pooling_mode != 'max', "Do not merge classifier embeddings by taking the maximum. Use either mean or sum."
 
             #register a forward hook to grab the output of the first classification layer (called 'dense')
             activation = {}
@@ -209,10 +235,23 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
                     activation[name] = output.detach()
                 return _hook
             
-            self.classifier.head.dense.register_forward_hook(_get_activation('embeddings'))
-            
-            logits = self.forward(x) #run the forward function using model parameters for the task (so that it's inline with the finetuning)
-            e = activation['embeddings'] #get embedding
+            outputs = self.model(x, attention_mask=attention_mask)
+            hidden_states = outputs['hidden_states']
+            x = self._pool(hidden_states, self.pooling_mode, self.weighted, self.layer)
+            if self.shared_dense:
+                x = self.dense(x)
+
+            embeddings = []
+            for clf in self.classifiers:
+                clf.head.dense.register_forward_hook(_get_activation('embeddings'))
+                logits = clf(x)
+                embeddings.append(activation['embeddings'])
+
+            #need to figure out how to merge everything - we don't actually want it to stack the way I've done.
+            embeddings = torch.stack(embeddings, dim=1)
+            e = self._merged_strategy(embeddings, pooling_mode, reduce_dim=1)
+                #logits = self.forward(x) #run the forward function using model parameters for the task (so that it's inline with the finetuning)
+            #e = activation['embeddings'] #get embedding
         
         ## EMBEDDING 'pt': extract from a hidden state, 'wt': extract after matmul with layer weights
         elif embedding_type == 'pt' or embedding_type == 'wt':
@@ -234,9 +273,16 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
                 pooling_mode = self.pooling_mode
 
             e = self._pool(outputs['hidden_states'], pooling_mode, weighted, layer) #pool across the specified layer
+        
+        elif embedding_type == 'st':
+            assert self.shared_dense == True, 'The model must be trained with a shared dense layer'
+            outputs = self.model(x, attention_mask=attention_mask)
+            hidden_states = outputs['hidden_states']
+            x = self._pool(hidden_states, self.pooling_mode, self.weighted, self.layer)
+            e = self.dense(x)
 
         else:
-            raise ValueError('Embedding type must be finetune (ft), pretrain (pt), or weighted sum (wt)')
+            raise ValueError('Embedding type must be finetune (ft), pretrain (pt), shared dense (st), or weighted sum (wt)')
         
         return e
     
@@ -259,5 +305,13 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
         hidden_states = outputs['hidden_states']
         x = self._pool(hidden_states, self.pooling_mode, self.weighted, self.layer)
 
-        logits = self.classifier(x)   
+        if self.shared_dense:
+            x = self.dense(x)
+
+        preds = []
+        for clf in self.classifiers:
+            pred = clf(x)
+            preds.append(pred)
+
+        logits = torch.column_stack(preds)
         return logits

@@ -5,7 +5,7 @@ Classification head
 Transforms from SSAST added (https://github.com/YuanGongND/ssast/tree/main/src/run.py)
 
 Author(s): Neurology AI Program (NAIP) at Mayo Clinic
-Last modified: 05/2023
+Last modified: 07/2023
 '''
 #IMPORTS
 #built-in
@@ -43,10 +43,11 @@ class ClassificationHead(nn.Module):
         Source: https://colab.research.google.com/github/m3hrdadfi/soxan/blob/main/notebooks/Eating_Sound_Collection_using_Wav2Vec2.ipynb#scrollTo=Fv62ShDsH5DZ
     """
 
-    def __init__(self, input_size, output_size, activation='relu',final_dropout=0.2, layernorm=False ):
+    def __init__(self, input_size=768, bottleneck=150, output_size=2, activation='relu',final_dropout=0.2, layernorm=False ):
         """
         Create a classification head with a dense layer, relu activation, a dropout layer, and final classification layer
-        :param hiden_size: size of input to classification head - equivalent to the last hidden layer size in the Wav2Vec 2.0 model (int)
+        :param input_size: size of input to classification head 
+        :param bottleneck: size to reduce to in intial dense layer (if you don't want to reduce size, set bottleneck=input size)
         :param output_size: number of categories for classification output
         :param num_labels: specify number of categories to classify
         :param activation: activation function for classification head
@@ -55,6 +56,7 @@ class ClassificationHead(nn.Module):
         """
         super().__init__()
         self.input_size = input_size
+        self.bottleneck= bottleneck
         self.output_size = output_size
         self.activation = activation
         self.layernorm = layernorm
@@ -62,17 +64,17 @@ class ClassificationHead(nn.Module):
 
         classifier = []
         key = []
-        classifier.append(nn.Linear(self.input_size, self.input_size) )
+        classifier.append(nn.Linear(self.input_size, self.bottleneck))
         key.append('dense')
         if self.layernorm:
-            classifier.append(nn.LayerNorm(self.input_size))
+            classifier.append(nn.LayerNorm(self.bottleneck))
             key.append('norm')
         if self.activation == 'relu':
             classifier.append(nn.ReLU())
             key.append('relu')
         classifier.append(nn.Dropout(self.final_dropout))
         key.append('dropout')
-        classifier.append(nn.Linear(self.input_size, self.output_size))
+        classifier.append(nn.Linear(self.bottleneck, self.output_size))
         key.append('outproj')
 
         self.classifier=classifier

@@ -31,6 +31,8 @@
             "--weighted=False",
             "--layer=-1",
             "--freeze=True",
+            "--shared_dense=False",
+            "--sd_bottleneck=768",
             "--embedding_type=ft",
             "--resample_rate=16000",
             "--reduce=True",
@@ -56,6 +58,7 @@
             "--activation=relu",
             "--final_dropout=0.3",
             "--layernorm=False",
+            "--clf_bottleneck=768",
             "--debug=False"
           ]
         }
