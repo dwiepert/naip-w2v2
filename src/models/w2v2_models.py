@@ -254,33 +254,36 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
             #e = activation['embeddings'] #get embedding
         
         ## EMBEDDING 'pt': extract from a hidden state, 'wt': extract after matmul with layer weights
-        elif embedding_type == 'pt' or embedding_type == 'wt':
-            outputs = self.model(x, attention_mask=attention_mask)
-
-            if embedding_type == 'pt': # if 'pt', self.weighted must always be false
+        elif embedding_type in ['pt', 'st', 'wt']:
+        
+            #dealing with weighted sum
+            #if embedding type is st, do we want it to follow whatever the base model did?
+            if embedding_type == 'pt': #if the embedding is extracting from pre-trained model, weighted must be false
                 weighted=False
-            else: #else the model must have been trained for weighted sum, so original self.weighted must be True
+            elif embedding_type == 'wt': #else the model must have been trained for weighted sum, so original self.weighted must be True
                 try:
                     weighted=self.weighted
                     assert weighted
                 except:
                     raise ValueError('The model must be trained for weightsum')
+            else:
+                #if embedding type is st, it will follow whatever you desire
+                weighted=self.weighted
+            
+            #dealing with specific layer extraction
+            #if pretrained extraction, you can extract from any layer, and if none specified, use the one from the model
+            #if weighted sum, embedding extraction should use all the same layer as the model
+            #if shared dense, embedding extraction should use the same layer as the model
+            if embedding_type in ['st','wt'] or layer is None:
+               layer = self.layer
 
-            if layer is None:
-                layer = self.layer
-
-            if pooling_mode is None:
-                pooling_mode = self.pooling_mode
-
-            e = self._pool(outputs['hidden_states'], pooling_mode, weighted, layer) #pool across the specified layer
-        
-        elif embedding_type == 'st':
-            assert self.shared_dense == True, 'The model must be trained with a shared dense layer'
             outputs = self.model(x, attention_mask=attention_mask)
-            hidden_states = outputs['hidden_states']
-            x = self._pool(hidden_states, self.pooling_mode, self.weighted, self.layer)
-            e = self.dense(x)
+            e = self._pool(outputs['hidden_states'], self.pooling_mode, weighted, layer) #pool across the specified layer
 
+            if embedding_type == 'st':
+                assert self.shared_dense == True, 'The model must be trained with a shared dense' 
+                e = self.dense(e)
+    
         else:
             raise ValueError('Embedding type must be finetune (ft), pretrain (pt), shared dense (st), or weighted sum (wt)')
         
