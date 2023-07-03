@@ -92,6 +92,8 @@ There are many possible arguments to set, including all the parameters associate
 * `--lib`: : specifies whether to load using librosa (True) or torchaudio (False), default=False
 * `-c, --checkpoint`: specify a pretrained model checkpoint - this is a base model from w2v2, as mentioned earlier. Default is 'facebook/wav2vec2-base-960h' which is a base model trained on 960h of Librispeech. This is required regardless of whether you include a fine-tuned model path. If using a checkpoint stored on GCS, make sure it starts with 'gs://'
 * `-mp, --finetuned_mdl_path`: if running eval-only or extraction, you can specify a fine-tuned model to load in. This can either be a local path of a 'gs://' path, that latter of which will trigger the code to download the specified model path to the local machine. 
+* `--val_size`: Specify size of validation set to generate
+* `--seed`: Specify a seed for random number generator to make validation set consistent across runs. Accepts None or any valid RandomState input (i.e., int)
 
 ### Google cloud storage
 * `-b, --bucket_name`: sets the `bucket_name` for GCS loading. Required if loading from cloud.

@@ -118,7 +118,7 @@ def finetune_w2v2(args):
     print('Running finetuning: ')
     # (1) load data
     assert '.csv' not in args.data_split_root, f'May have given a full file path, please confirm this is a directory: {args.data_split_root}'
-    train_df, val_df, test_df = load_data(args.data_split_root, args.target_labels, args.exp_dir, args.cloud, args.cloud_dir, args.bucket)
+    train_df, val_df, test_df = load_data(args.data_split_root, args.target_labels, args.exp_dir, args.cloud, args.cloud_dir, args.bucket, args.val_size, args.seed)
 
     if args.debug:
         train_df = train_df.iloc[0:8,:]
@@ -213,7 +213,7 @@ def eval_only(args):
             eval_df["distortions"]=((eval_df["distorted Cs"]+eval_df["distorted V"])>0).astype(int)
         eval_df = eval_df.dropna(subset=args.target_labels)
     else:
-        train_df, val_df, eval_df = load_data(args.data_split_root, args.target_labels, args.exp_dir, args.cloud, args.cloud_dir, args.bucket)
+        train_df, val_df, eval_df = load_data(args.data_split_root, args.target_labels, args.exp_dir, args.cloud, args.cloud_dir, args.bucket, args.val_size, args.seed)
     
     if args.debug:
         eval_df = eval_df.iloc[0:8,:]
@@ -264,6 +264,8 @@ def main():
     parser.add_argument('--lib', default=False, type=ast.literal_eval, help="Specify whether to load using librosa as compared to torch audio")
     parser.add_argument("-c", "--checkpoint", default="wav2vec2-base-960h", help="specify path to pre-trained model weight checkpoint")
     parser.add_argument("-mp", "--finetuned_mdl_path", default=None, help='If running eval-only or extraction, you have the option to load a fine-tuned model by specifying the save path here. If passed a gs:// file, will download to local machine.')
+    parser.add_argument("--val_size", default=50, type=int, help="Specify size of validation set to generate")
+    parser.add_argument("--seed", default=None, help='Specify a seed for random number generator to make validation set consistent across runs. Accepts None or any valid RandomState input (i.e., int)')
     #GCS
     parser.add_argument('-b','--bucket_name', default=None, help="google cloud storage bucket name")
     parser.add_argument('-p','--project_name', default=None, help='google cloud platform project name')

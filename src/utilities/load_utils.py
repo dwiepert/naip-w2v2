@@ -1,7 +1,7 @@
 '''
 Upload/Download helper functions
 
-Last modified: 05/2023
+Last modified: 07/2023
 Author: Daniela Wiepert
 Email: wiepert.daniela@mayo.edu
 File: load_utils.py
@@ -162,7 +162,7 @@ def setup_mdl_args(args, model_path):
             
     return model_args, model_path
 
-def load_data(data_split_root, target_labels, exp_dir, cloud, cloud_dir, bucket):
+def load_data(data_split_root, target_labels, exp_dir, cloud, cloud_dir, bucket, val_size, seed):
     """
     Load the train and test data from a directory. Assumes the train and test data will exist in this directory under train.csv and test.csv
     :param data_split_root: specify str path where datasplit csvs are located
@@ -171,6 +171,8 @@ def load_data(data_split_root, target_labels, exp_dir, cloud, cloud_dir, bucket)
     :param cloud: boolean to specify whether to save everything to google cloud storage
     :param cloud_dir: if saving to the cloud, you can specify a specific place to save to in the CLOUD bucket
     :param bucket: google cloud storage bucket object
+    :param val_size: size of validation set to generate
+    :param seed: seed for random number generator when creating a validation set. Can accept None or any valid RandomState seed
     :return train_df, val_df, test_df: loaded dataframes with annotations
     """
     train_path = f'{data_split_root}/train.csv'
@@ -180,7 +182,10 @@ def load_data(data_split_root, target_labels, exp_dir, cloud, cloud_dir, bucket)
     test_df = pd.read_csv(test_path, index_col = 'uid')
 
     #randomly sample to get validation set 
-    val_df = train_df.sample(50)
+    if seed is None:
+        val_df = train_df.sample(val_size)
+    else:
+        val_df = train_df.sample(val_size, random_state=seed)
     train_df = train_df.drop(val_df.index)
 
     #save validation set
