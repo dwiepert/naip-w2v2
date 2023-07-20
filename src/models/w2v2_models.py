@@ -102,9 +102,10 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
         #adding a shared dense layer
         self.shared_dense = shared_dense
         if self.shared_dense:
-            self.dense = nn.Linear(self.embedding_dim, self.sd_bottleneck)
+            self.dense = nn.Sequential(OrderedDict([('dense',nn.Linear(self.embedding_dim, self.sd_bottleneck)), ('relu',nn.ReLU())]))
             self.clf_input = self.sd_bottleneck
         else:
+            self.dense = nn.Identity()
             self.clf_input = self.embedding_dim
     
         assert layer >= -1 and layer < self.n_states, f'invalid layer" {layer}. Layer must either be -1 for final layer, or a number between 0 and {self.n_states}'
@@ -238,8 +239,7 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
             outputs = self.model(x, attention_mask=attention_mask)
             hidden_states = outputs['hidden_states']
             x = self._pool(hidden_states, self.pooling_mode, self.weighted, self.layer)
-            if self.shared_dense:
-                x = self.dense(x)
+            x = self.dense(x)
 
             embeddings = []
             for clf in self.classifiers:
@@ -308,8 +308,8 @@ class Wav2Vec2ForSpeechClassification(nn.Module):
         hidden_states = outputs['hidden_states']
         x = self._pool(hidden_states, self.pooling_mode, self.weighted, self.layer)
 
-        if self.shared_dense:
-            x = self.dense(x)
+        #if self.shared_dense:
+        x = self.dense(x)
 
         preds = []
         for clf in self.classifiers:

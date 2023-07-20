@@ -183,7 +183,6 @@ def finetune_w2v2(args):
 
     print('Saving predictions and targets')
 
-    
     pred_path = path + "_predictions.pt"
     target_path = path + "_targets.pt"
     
@@ -335,6 +334,7 @@ def main():
     # (3) get dataset name
     if args.dataset is None:
         if args.finetuned_mdl_path is None or args.mode == 'finetune':
+            #TO
             if '.csv' in args.data_split_root:
                 args.dataset = '{}_{}'.format(os.path.basename(os.path.dirname(args.data_split_root)), os.path.basename(args.data_split_root[:-4]))
             else:
@@ -387,7 +387,10 @@ def main():
     if args.mode=='finetune':
         #only save args if training a model. 
         args_path = "%s/args.pkl" % args.exp_dir
-        assert not os.path.exists(args_path), 'Current experiment directory already has an args.pkl file. Please change experiment directory or rename the args.pkl to avoid overwriting the file.'
+        try:
+            assert not os.path.exists(args_path)
+        except:
+            print('Current experiment directory already has an args.pkl file. This file will be overwritten. Please change experiment directory or rename the args.pkl to avoid overwriting the file in the future.')
 
         with open(args_path, "wb") as f:
             pickle.dump(args, f)

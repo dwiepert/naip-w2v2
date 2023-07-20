@@ -59,6 +59,8 @@ DATA SPLIT DIR
 
     -- test.csv
 
+    -- (OPTIONAL) val.csv
+
 ## Audio Configuration
 Data is loaded using an `W2V2Dataset` class, where you pass a dataframe of the file names (UIDs) along with columns containing label data, a list of the target labels (columns to select from the df), specify audio configuration, method of loading, and initialize transforms on the raw waveform (see [dataloader.py](https://github.com/dwiepert/naip-w2v2/blob/main/src/dataloader.py)). 
 
@@ -87,7 +89,7 @@ There are many possible arguments to set, including all the parameters associate
 ### Loading data
 * `-i, --prefix`: sets the `prefix` or input directory. Compatible with both local and GCS bucket directories containing audio files, though do not include 'gs://'
 * `-s, --study`: optionally set the study. You can either include a full path to the study in the `prefix` arg or specify some parent directory in the `prefix` arg containing more than one study and further specify which study to select here.
-* `-d, --data_split_root`: sets the `data_split_root` directory or a full path to a single csv file. For classification, it must be  a directory containing a train.csv and test.csv of file names. If runnning embedding extraction, it should be a csv file. Running evaluation only can accept either a directory or a csv file. This path should include 'gs://' if it is located in a bucket. 
+* `-d, --data_split_root`: sets the `data_split_root` directory or a full path to a single csv file. For classification, it must be  a directory containing a train.csv and test.csv of file names. If runnning embedding extraction, it should be a csv file. Running evaluation only can accept either a directory or a csv file. This path should include 'gs://' if it is located in a bucket. Note that you may optionally include a val.csv file in this directory, otherwise the loading function will use the arguments specified below to generate one. 
 * `-l, --label_txt`: sets the `label_txt` path. This is a full file path to a .txt file contain a list of the target labels for selection (see [labels.txt](https://github.com/dwiepert/naip-w2v2/blob/main/labels.txt). Features in same classifier group should be split by ',', each feature classifier group should be split by '/n'). If stored in a bucket it If it is empty, it will require that embedding extraction be running.
 * `--lib`: : specifies whether to load using librosa (True) or torchaudio (False), default=False
 * `-c, --checkpoint`: specify a pretrained model checkpoint - this is a base model from w2v2, as mentioned earlier. Default is 'facebook/wav2vec2-base-960h' which is a base model trained on 960h of Librispeech. This is required regardless of whether you include a fine-tuned model path. If using a checkpoint stored on GCS, make sure it starts with 'gs://'

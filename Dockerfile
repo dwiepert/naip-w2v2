@@ -1,13 +1,13 @@
 # use a Google maintained base image hosted in 
 # Google's container registry
-FROM us.gcr.io/ml-mps-aif-afdgpet01-p-6827/speech:latest
+FROM gcr.io/deeplearning-platform-release/pytorch-gpu.1-13.py310
 
 # package dependencies - install requirements not included in base image
-# ARG AIF_PIP_INDEX
-# RUN pip install -i $AIF_PIP_INDEX --upgrade pip
+ARG AIF_PIP_INDEX
+RUN pip install -i $AIF_PIP_INDEX --upgrade pip
 
-# COPY requirements.txt requirements.txt
-# RUN pip install -r requirements.txt
+COPY requirements.txt requirements.txt
+RUN pip install -r requirements.txt
 
 #if you want to install with conda
 #RUN conda install -y package_name=version

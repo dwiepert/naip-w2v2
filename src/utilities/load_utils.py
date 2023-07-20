@@ -10,8 +10,10 @@ File: load_utils.py
 #IMPORTS
 import os
 import pickle
+import random
 
 import pandas as pd
+
 
 from google.cloud import storage
 
@@ -162,7 +164,7 @@ def setup_mdl_args(args, model_path):
             
     return model_args, model_path
 
-def load_data(data_split_root, target_labels, exp_dir, cloud, cloud_dir, bucket, val_size, seed):
+def load_data(data_split_root, target_labels, exp_dir, cloud, cloud_dir, bucket, val_size=50, seed=None):
     """
     Load the train and test data from a directory. Assumes the train and test data will exist in this directory under train.csv and test.csv
     :param data_split_root: specify str path where datasplit csvs are located
@@ -175,25 +177,34 @@ def load_data(data_split_root, target_labels, exp_dir, cloud, cloud_dir, bucket,
     :param seed: seed for random number generator when creating a validation set. Can accept None or any valid RandomState seed
     :return train_df, val_df, test_df: loaded dataframes with annotations
     """
-    train_path = f'{data_split_root}/train.csv'
-    test_path = f'{data_split_root}/test.csv'
+    train_path = os.path.join(data_split_root,'train.csv')
+    test_path = os.path.join(data_split_root,'test.csv')
     #get data
     train_df = pd.read_csv(train_path, index_col = 'uid')
     test_df = pd.read_csv(test_path, index_col = 'uid')
+    
+    try:
+        val_path = os.path.join(data_split_root,'val.csv')
+        val_df = pd.read_csv(val_path, index_col = 'uid')
+        train_df = train_df.loc[~train_df['subject'].isin(val_df['subject'].drop_duplicates().to_list())] #double check that no validation speakers are in the train set
 
-    #randomly sample to get validation set 
-    if seed is None:
-        val_df = train_df.sample(val_size)
-    else:
-        val_df = train_df.sample(val_size, random_state=seed)
-    train_df = train_df.drop(val_df.index)
+    except:
+        #randomly sample to get validation set 
+        if seed is not None:
+            random.seed(seed)
+        
+        val_spks = train_df['subject'].drop_duplicates().to_list()
+        val_spks = random.sample(val_spks, val_size)
+        
+        train_df = train_df.loc[~train_df['subject'].isin(val_spks)]
+        val_df = train_df.loc[train_df['subject'].isin(val_spks)]
 
-    #save validation set
-    val_path = os.path.join(exp_dir, 'validation.csv')
-    val_df.to_csv(val_path, index=True)
+        #save validation set
+        val_path = os.path.join(exp_dir, 'validation.csv')
+        val_df.to_csv(val_path, index=True)
 
-    if cloud:
-        upload(cloud_dir, val_path, bucket)
+        if cloud:
+            upload(cloud_dir, val_path, bucket)
 
     #alter data columns
     if 'distortions' in target_labels:
