@@ -47,7 +47,7 @@ SPEECH DATA DIR
 
         -- waveform.EXT (extension can be any audio file extension)
 
-        -- metadata.json (containing the key 'encoding' (with the extension in capital letters, i.e. mp3 as MP3), also containing the key 'sample_rate_hz' with the full sample rate)
+        -- metadata.json (containing the key 'encoding' (with the extension in capital letters, i.e. mp3 as MP3), also containing the key 'sample_rate_hz' with the full sample rate) 
 
 and for the data splits
 
@@ -60,6 +60,8 @@ DATA SPLIT DIR
     -- test.csv
 
     -- (OPTIONAL) val.csv
+
+Note that datasplits can be generated using [data_splits.py]https://github.com/dwiepert/naip-w2v2/blob/main/src/data_splits.py), but this requires that metadata.json includes a 'task' variable. 
 
 ## Audio Configuration
 Data is loaded using an `W2V2Dataset` class, where you pass a dataframe of the file names (UIDs) along with columns containing label data, a list of the target labels (columns to select from the df), specify audio configuration, method of loading, and initialize transforms on the raw waveform (see [dataloader.py](https://github.com/dwiepert/naip-w2v2/blob/main/src/dataloader.py)). 
@@ -151,7 +153,7 @@ There are a few different parameters to consider. Firstly, the classification he
 
 Default run mode will also freeze the base W2V2 model and only finetune the classification head. This can be altered with `--freeze`. 
 
-We also include the option to use a different hidden state output as the input to the classification head. This can be specified with `--layer` and must be an integer between 0 and `model.n_states` (or -1 to get the final layer). This works in the `W2V2ForSpeechClassification` class by getting a list of hidden states and indexing using the `layer` parameter. Additionally, you can add a shared dense layer prior to the classification head(s) by specifying  `--shared_dense` along with `--sd_bottleneck` to designate the output size for the shared dense layer. 
+We also include the option to use a different hidden state output as the input to the classification head. This can be specified with `--layer` and must be an integer between 0 and `model.n_states` (or -1 to get the final layer). This works in the `W2V2ForSpeechClassification` class by getting a list of hidden states and indexing using the `layer` parameter. Additionally, you can add a shared dense layer prior to the classification head(s) by specifying  `--shared_dense` along with `--sd_bottleneck` to designate the output size for the shared dense layer. Note that the shared dense layer is followed by ReLU activation. Furthermore, if `shared_dense` is False, it will create an Identity layer so as to avoid if statements in the forward loop. 
 
 Classification head(s) can be implemented in the following manner:
 1. Specify `--clf_bottleneck` to designate output for initial linear layer 
