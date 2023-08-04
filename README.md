@@ -185,5 +185,9 @@ Embedding extraction is the only mode where target labels are not required. You 
 ## Visualize Attention
 Not yet implemented. 
 
+## Vertex AI support
+Training jobs can be submitted to Google Cloud Vertex AI. We've provided a code that can create some simple config files and run the command for sending a job to vertex ai from your local machine.   
+See the [vertexai_support](https://github.com/dwiepert/naip-w2v2/blob/main/vertexai_support) folder for the script ([configparse.py](https://github.com/dwiepert/naip-w2v2/blob/main/vertexai_support/configparse.py)), a notebook with instructions for setting up and running a job [example_job.ipynb](https://github.com/dwiepert/naip-w2v2/blob/main/vertexai_support/example_job.ipynb), an example [Dockerfile](https://github.com/dwiepert/naip-w2v2/blob/main/vertexai_support/Dockerfile), and an example [configuration file](https://github.com/dwiepert/naip-w2v2/blob/main/vertexai_support/example_config.json). We recommend looking at the notebook first. [configparse.py](https://github.com/dwiepert/naip-w2v2/blob/main/vertexai_support/configparse.py) includes support for submitting a single job or a hyperparameter tuning job. 
 
+There is also a script called [score_hptuning.py](https://github.com/dwiepert/naip-w2v2/blob/main/vertexai_support/score_hptuning.py) that can load AUC results from a hyperparameter tuning job and create a df with all parameter information and results. 
 

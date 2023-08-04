@@ -221,8 +221,7 @@ def embedding_extraction(model, dataloader,embedding_type='ft',layer=-1, pooling
         
     return embeddings
 
-def calc_auc(preds, targets, target_labels,
-         exp_dir, cloud, cloud_dir, bucket):
+def calc_auc(preds, targets):
     """
     Get AUC scores, doesn't return, just saves the metrics to a csv
     :param args: dict with all the argument values
@@ -235,10 +234,5 @@ def calc_auc(preds, targets, target_labels,
     pred_mat=torch.sigmoid(preds).numpy()
     target_mat=targets.numpy()
     aucs=roc_auc_score(target_mat, pred_mat, average = None) #TODO: this doesn't work when there is an array with all labels as 0???
-    print(aucs)
-    data = pd.DataFrame({'Label':target_labels, 'AUC':aucs})
-    data.to_csv(os.path.join(exp_dir, 'aucs.csv'), index=False)
-    if cloud:
-        upload(cloud_dir, os.path.join(exp_dir, 'aucs.csv'), bucket)
-
-    return data
+    #print(aucs)
+    return aucs

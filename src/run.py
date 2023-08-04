@@ -17,6 +17,7 @@ import os
 import pickle
 
 #third-party
+import hypertune
 import torch
 import pandas as pd
 import pyarrow
@@ -193,6 +194,21 @@ def finetune_w2v2(args):
         upload(args.cloud_dir, pred_path, args.bucket)
         upload(args.cloud_dir, target_path, args.bucket)
 
+    #if args.calc:
+    aucs = calc_auc(preds, targets)
+    if args.hp_tuning:
+        hpt = hypertune.HyperTune()
+        for a in aucs:
+            hpt.report_hyperparameter_tuning_metric(
+                hyperparameter_metric_tag='AUC',
+                metric_value=a
+            )
+    
+    data = pd.DataFrame({'Label':args.target_labels, 'AUC':aucs})
+    data.to_csv(os.path.join(args.exp_dir, 'aucs.csv'), index=False)
+    if args.cloud:
+        upload(args.cloud_dir, os.path.join(args.exp_dir, 'aucs.csv'), args.bucket)
+
     print('Finetuning finished')
 
 
@@ -302,7 +318,7 @@ def main():
     parser.add_argument("--optim", type=str, default="adamw", help="training optimizer", choices=["adam", "adamw"])
     parser.add_argument("--weight_decay", type=float, default=.0001, help='specify weight decay for adamw')
     parser.add_argument("--loss", type=str, default="BCE", help="the loss function for finetuning, depend on the task", choices=["MSE", "BCE"])
-    parser.add_argument("--scheduler", type=str, default="None", help="specify lr scheduler", choices=["onecycle", None])
+    parser.add_argument("--scheduler", type=str, default=None, help="specify lr scheduler", choices=["onecycle", "None",None])
     parser.add_argument("--max_lr", type=float, default=0.01, help="specify max lr for lr scheduler")
     #classification head parameters
     parser.add_argument("--activation", type=str, default='relu',choices=["relu"], help="specify activation function to use for classification head")
@@ -311,14 +327,15 @@ def main():
     parser.add_argument("--clf_bottleneck", type=int, default=768, help="specify whether to apply a bottleneck to initial classifier dense layer")
     #OTHER
     parser.add_argument("--debug", default=True, type=ast.literal_eval)
+    parser.add_argument("--hp_tuning", default=False, type=ast.literal_eval)
     args = parser.parse_args()
     
-    print(args.weighted)
-    print(type(args.weighted))
     print('Torch version: ',torch.__version__)
     print('Cuda availability: ', torch.cuda.is_available())
     print('Cuda version: ', torch.version.cuda)
     
+    if args.scheduler=="None":
+        args.scheduler = None
     #variables
     # (1) Set up GCS
     if args.bucket_name is not None:
@@ -372,6 +389,20 @@ def main():
     # (5) check if output directory exists, SHOULD NOT BE A GS:// path
     if not os.path.exists(args.exp_dir):
         os.makedirs(args.exp_dir)
+
+    if args.mode == 'finetune' and args.hp_tuning and args.cloud:
+        path =  '{}_{}_{}{}_epoch{}_{}_clf{}_lr{}_bs{}_layer{}'.format(args.dataset, np.sum(args.n_class), args.optim,args.weight_decay, args.epochs, os.path.basename(args.checkpoint), len(args.n_class), args.learning_rate, args.batch_size, args.layer)
+        if args.shared_dense:
+            path = path + '_sd{}'.format(args.sd_bottleneck)
+        if args.weighted:
+            path = path + '_ws'
+        if args.scheduler is not None:
+            path = path + '_{}_maxlr{}'.format(args.scheduler, args.max_lr)
+        if args.layernorm:
+            path = path + '_layernorm'
+        path = path + '_dropout{}_clf{}'.format(args.final_dropout, args.clf_bottleneck)
+
+        args.cloud_dir = os.path.join(args.cloud_dir, path)
 
     # (6) check that clip length has been set
     if args.clip_length != 0:
