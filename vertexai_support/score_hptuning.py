@@ -10,24 +10,22 @@ File: score.py
 #IMPORTS
 #built-in
 import argparse
-import ast
 import itertools
 import os
-import pickle
 import glob
 import re
 
 #third-party
 import torch
 import pandas as pd
-import pyarrow
+import numpy as np
 
 from google.cloud import storage
-from torch.utils.data import  DataLoader
 
+from sklearn.metrics import roc_auc_score, roc_curve
 #local
-from utilities import *
-from loops import *
+#from utilities import *
+#from loops import *
 
 
 def calc_auc(preds, targets):
@@ -47,11 +45,15 @@ def calc_auc(preds, targets):
 
 def get_predictions(dirs):
     aucs = {}
+    no_data = []
     for d in dirs:
-        pred = torch.load(glob.glob(os.path.join(d,'*predictions.pt'))[0])
-        target = torch.load(glob.glob(os.path.join(d,'*targets.pt'))[0])
-        score = calc_auc(pred, target)
-        aucs[d] = score
+        try:
+            pred = torch.load(glob.glob(os.path.join(d,'*predictions.pt'))[0])
+            target = torch.load(glob.glob(os.path.join(d,'*targets.pt'))[0])
+            score = calc_auc(pred, target)
+            aucs[d] = score
+        except:
+            no_data.append(d)
     return aucs
 
 def save(data, outname, target_labels):
@@ -67,6 +69,7 @@ def download_predictions(prefix, save_dir, bucket):
         os.makedirs(save_dir)
 
     blobs = bucket.list_blobs(prefix=prefix)
+    i = 0
     for blob in blobs:
         destination_uri = '{}/{}/{}'.format(save_dir, os.path.basename(os.path.dirname(blob.name)),os.path.basename(blob.name))
         
@@ -76,44 +79,79 @@ def download_predictions(prefix, save_dir, bucket):
             if not os.path.exists(destination_uri):
                 blob.download_to_filename(destination_uri)
 
+            i+= 1
+            if i%50==0:
+                print(f'{i} blobs downloaded')
+
 def split_name(dir_list):
     params = {}
     for s in dir_list:
         dir = os.path.basename(s)
-        if dir != '':
+        if dir != '' and dir != 'configs':
             temp = {}
             p = dir.split("_")
             temp['weight_decay'] = re.sub("[A-Za-z]","",p[6])
             temp['epoch'] = re.sub("[A-Za-z]","",p[7])
-            temp['clf'] = p[9]
+            temp['clf'] = re.sub("[A-Za-z]","",p[9])
             temp['lr'] = re.sub("[A-Za-z]","",p[10])
             temp['bs'] = re.sub("[A-Za-z]","",p[11])
             temp['layer'] = re.sub("[A-Za-z]","",p[12])
+
             if 'onecycle' in dir:
                 temp['scheduler'] = True
-                if 'sd' in dir:
-                    temp['shared_dense'] = True
-                    temp['sd_bottleneck'] = re.sub("[A-Za-z]","",p[13])
-                    temp['dropout'] = re.sub("[A-Za-z]","",p[16])
-                    temp['clf_bottleneck'] = re.sub("[A-Za-z]","",p[17])
-                else:
-                    temp['shared_dense'] = False
-                    temp['sd_bottleneck'] = 'None'
-                    temp['dropout'] = re.sub("[A-Za-z]","",p[15])
-                    temp['clf_bottleneck'] = re.sub("[A-Za-z]","",p[16])
+                if 'ws' not in dir:
+                    temp['weighted'] = False
+                    if 'sd' in dir:
+                        temp['shared_dense'] = True
+                        temp['sd_bottleneck'] = re.sub("[A-Za-z]","",p[13])
+                        temp['dropout'] = re.sub("[A-Za-z]","",p[16])
+                        temp['clf_bottleneck'] = re.sub("[A-Za-z]","",p[17])
+                    else:
+                        temp['shared_dense'] = False
+                        temp['sd_bottleneck'] = 'None'
+                        temp['dropout'] = re.sub("[A-Za-z]","",p[15])
+                        temp['clf_bottleneck'] = re.sub("[A-Za-z]","",p[16])
+                else: 
+                    temp['weighted'] = True
+                    if 'sd' in dir:
+                        temp['shared_dense'] = True
+                        temp['sd_bottleneck'] = re.sub("[A-Za-z]","",p[13])
+                        temp['dropout'] = re.sub("[A-Za-z]","",p[17])
+                        temp['clf_bottleneck'] = re.sub("[A-Za-z]","",p[18])
+                    else:
+                        temp['shared_dense'] = False
+                        temp['sd_bottleneck'] = 'None'
+                        temp['dropout'] = re.sub("[A-Za-z]","",p[16])
+                        temp['clf_bottleneck'] = re.sub("[A-Za-z]","",p[17])
+
             else:
                 temp['scheduler'] = False
-                if 'sd' in dir:
-                    temp['shared_dense'] = True
-                    temp['sd_bottleneck'] = re.sub("[A-Za-z]","",p[13])
-                    temp['dropout'] = re.sub("[A-Za-z]","",p[14])
-                    temp['clf_bottleneck'] = re.sub("[A-Za-z]","",p[15])
+                if 'ws' not in dir:
+                    temp['weighted'] = False
+                    if 'sd' in dir:
+                        temp['shared_dense'] = True
+                        temp['sd_bottleneck'] = re.sub("[A-Za-z]","",p[13])
+                        temp['dropout'] = re.sub("[A-Za-z]","",p[14])
+                        temp['clf_bottleneck'] = re.sub("[A-Za-z]","",p[15])
+                    else:
+                        temp['shared_dense'] = False
+                        temp['sd_bottleneck'] = 'None'
+                        temp['dropout'] = re.sub("[A-Za-z]","",p[13])
+                        temp['clf_bottleneck'] = re.sub("[A-Za-z]","",p[14])
                 else:
-                    temp['shared_dense'] = False
-                    temp['sd_bottleneck'] = 'None'
-                    temp['dropout'] = re.sub("[A-Za-z]","",p[13])
-                    temp['clf_bottleneck'] = re.sub("[A-Za-z]","",p[14])
+                    temp['weighted'] = True
+                    if 'sd' in dir:
+                        temp['shared_dense'] = True
+                        temp['sd_bottleneck'] = re.sub("[A-Za-z]","",p[13])
+                        temp['dropout'] = re.sub("[A-Za-z]","",p[15])
+                        temp['clf_bottleneck'] = re.sub("[A-Za-z]","",p[16])
+                    else:
+                        temp['shared_dense'] = False
+                        temp['sd_bottleneck'] = 'None'
+                        temp['dropout'] = re.sub("[A-Za-z]","",p[14])
+                        temp['clf_bottleneck'] = re.sub("[A-Za-z]","",p[15])
             params[s] = temp
+    return params
 
 def params_to_df(params):
     data = []
@@ -127,6 +165,7 @@ def params_to_df(params):
                         params[key]['bs'],
                         params[key]['layer'],
                         params[key]['scheduler'],
+                        params[key]['weighted'],
                         params[key]['shared_dense'],
                         params[key]['sd_bottleneck'],
                         params[key]['dropout'],
@@ -134,7 +173,7 @@ def params_to_df(params):
         # if no entry, skip
         except:
             pass 
-    df=pd.DataFrame(data=data,columns=['dir','weight_decay','epoch','clf','lr','bs', 'layer','scheduler','shared_dense','sd_bottleneck','dropout','clf_bottleneck'])
+    df=pd.DataFrame(data=data,columns=['dir','weight_decay','epoch','clf','lr','bs', 'layer','scheduler','weighted','shared_dense','sd_bottleneck','dropout','clf_bottleneck'])
 
     return df
 
@@ -178,9 +217,9 @@ def auc_comp_metrics(df, target_labels):
 def main():
     parser = argparse.ArgumentParser()
     #Inputs
-    parser.add_argument('-i','--input_dir',default='/Users/m144443/Documents/w2v2_layers/amr_v2/top5/', help='Input directory or location in google cloud storage bucket containing files to load')
-    parser.add_argument('-i','--local_save_dir',default='/Users/m144443/Documents/w2v2_layers/amr_v2/top5/', help='Input directory or location in google cloud storage bucket containing files to load')
-    parser.add_argument('-l','--label_txt', default='./labels.txt') #default=None #default='./labels.txt'
+    parser.add_argument('-i','--input_dir',default='', help='Input directory or location in google cloud storage bucket containing files to load')
+    parser.add_argument('-s','--local_save_dir',default='', help='Input directory or location in google cloud storage bucket containing files to load')
+    parser.add_argument('-l','--label_txt', default='') #default=None #default='./labels.txt'
     #GCS
     parser.add_argument('-b','--bucket_name', default=None, help="google cloud storage bucket name")
     parser.add_argument('-p','--project_name', default=None, help='google cloud platform project name')
@@ -209,8 +248,11 @@ def main():
         target_labels = f.readlines()
     target_labels = [l.strip().split(sep=",") for l in target_labels]
     target_labels = list(itertools.chain.from_iterable(target_labels))
+    target_labels = [s.replace(" ","_") for s in target_labels]
+
 
     if args.input_dir[:5] =='gs://':
+        args.input_dir = args.input_dir[5:].replace(args.bucket_name,'')[1:]
         download_predictions(args.input_dir, args.local_save_dir, bucket)
         args.input_dir = args.local_save_dir
         
@@ -230,7 +272,7 @@ def main():
 
     df = auc_comp_metrics(df,target_labels)
 
-    df.to_csv(os.path.join(args.local_save_dir,'hp_results.csv'),index=False)
+    df.to_csv(os.path.join(args.input_dir,'hp_results.csv'),index=False)
     
 if __name__ == "__main__":
     main()

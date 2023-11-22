@@ -13,6 +13,7 @@ The environment must include the following packages, all of which can be dowload
 * tqdm (this is essentially enumerate(dataloader) except it prints out a nice progress bar for you)
 * transformers (must be downloaded with pip)
 * pyarrow
+* matplotlib
 
 If running on your local machine and not in a GCP environment, you will also need to install:
 * google-cloud-storage

@@ -8,7 +8,7 @@ Email: wiepert.daniela@mayo.edu
 File: dataloader.py
 '''
 
-#IMPORTSx
+#IMPORTS
 #third party
 import numpy as np
 import pandas as pd

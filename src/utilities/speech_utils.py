@@ -5,7 +5,7 @@ Classification head
 Transforms from SSAST added (https://github.com/YuanGongND/ssast/tree/main/src/run.py)
 
 Author(s): Neurology AI Program (NAIP) at Mayo Clinic
-Last modified: 07/2023
+Last modified: 11/2023
 '''
 #IMPORTS
 #built-in
@@ -29,7 +29,7 @@ import torch.nn.functional
 from torch.utils.data import Dataset
 
 from albumentations.core.transforms_interface import DualTransform, BasicTransform
-from google.cloud import storage, bigquery
+from google.cloud import storage
 from torch.utils.data import Dataset
 
 
@@ -207,7 +207,8 @@ def load_waveform_local(input_dir, uid, extension = None, lib=False):
     '''
     
     metadata_path = f'{input_dir}/{uid}/metadata.json'
-    metadata = json.loads(metadata_path)
+    with open(metadata_path) as f:
+        metadata = json.load(f)
     
     if extension is None:
         if metadata['encoding'] == 'MP3':

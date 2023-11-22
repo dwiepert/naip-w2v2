@@ -66,6 +66,9 @@ def get_embeddings(args):
     dataloader = DataLoader(waveform_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
     
     # (4) set up embedding model
+    if args.seed is not None:
+        torch.manual_seed(args.seed)
+        if torch.cuda.is_available(): torch.cuda.manual_seed_all(args.seed)
     model = Wav2Vec2ForSpeechClassification(checkpoint=model_args.checkpoint, label_dim = model_args.n_class, pooling_mode = model_args.pooling_mode, 
                                             freeze=model_args.freeze, weighted=model_args.weighted, layer=model_args.layer, shared_dense=model_args.shared_dense,
                                             sd_bottleneck=model_args.sd_bottleneck, clf_bottleneck=model_args.clf_bottleneck, activation=model_args.activation, 
@@ -148,6 +151,9 @@ def finetune_w2v2(args):
     #dataloader_test = DataLoader(dataset_test, batch_size = len(diag_test), shuffle = False, num_workers = args.num_workers)
 
     # (4) initialize model
+    if args.seed is not None:
+        torch.manual_seed(args.seed)
+        if torch.cuda.is_available(): torch.cuda.manual_seed_all(args.seed)
     model = Wav2Vec2ForSpeechClassification(checkpoint=args.checkpoint, label_dim = args.n_class, pooling_mode = args.pooling_mode, 
                                             freeze=args.freeze, weighted=args.weighted, layer=args.layer, shared_dense=args.shared_dense,
                                             sd_bottleneck=args.sd_bottleneck, clf_bottleneck=args.clf_bottleneck, activation=args.activation, final_dropout=args.final_dropout, 
@@ -220,7 +226,7 @@ def eval_only(args):
     assert args.finetuned_mdl_path is not None, 'Evaluation must be run on a finetuned model, otherwise classification head is completely untrained.'
     # get original model args (or if no finetuned model, uses your original args)
     model_args, args.finetuned_mdl_path = setup_mdl_args(args, args.finetuned_mdl_path)
-    
+
    # (1) load data
     if '.csv' in args.data_split_root: 
         eval_df = pd.read_csv(args.data_split_root, index_col = 'uid')
@@ -245,6 +251,9 @@ def eval_only(args):
     #dataloader_test = DataLoader(dataset_test, batch_size = len(diag_test), shuffle = False, num_workers = args.num_workers)
 
     # (4) initialize model
+    if args.seed is not None:
+        torch.manual_seed(args.seed)
+        if torch.cuda.is_available(): torch.cuda.manual_seed_all(args.seed)
     model = Wav2Vec2ForSpeechClassification(checkpoint=model_args.checkpoint, label_dim = model_args.n_class, pooling_mode = model_args.pooling_mode, 
                                             freeze=model_args.freeze, weighted=model_args.weighted, layer=model_args.layer, shared_dense=model_args.shared_dense,
                                             sd_bottleneck=model_args.sd_bottleneck, clf_bottleneck=model_args.clf_bottleneck, activation=model_args.activation, 
@@ -278,9 +287,9 @@ def main():
     parser.add_argument('-l','--label_txt', default='./labels.txt') #default=None #default='./labels.txt'
     parser.add_argument('--lib', default=False, type=ast.literal_eval, help="Specify whether to load using librosa as compared to torch audio")
     parser.add_argument("-c", "--checkpoint", default="wav2vec2-base-960h", help="specify path to pre-trained model weight checkpoint")
-    parser.add_argument("-mp", "--finetuned_mdl_path", default=None, help='If running eval-only or extraction, you have the option to load a fine-tuned model by specifying the save path here. If passed a gs:// file, will download to local machine.')
+    parser.add_argument("-mp", "--finetuned_mdl_path", default="", help='If running eval-only or extraction, you have the option to load a fine-tuned model by specifying the save path here. If passed a gs:// file, will download to local machine.')
     parser.add_argument("--val_size", default=50, type=int, help="Specify size of validation set to generate")
-    parser.add_argument("--seed", default=None, help='Specify a seed for random number generator to make validation set consistent across runs. Accepts None or any valid RandomState input (i.e., int)')
+    parser.add_argument("--seed", default=4200, help='Specify a seed for random number generator to make validation set consistent across runs. Accepts None or any valid RandomState input (i.e., int)')
     #GCS
     parser.add_argument('-b','--bucket_name', default=None, help="google cloud storage bucket name")
     parser.add_argument('-p','--project_name', default=None, help='google cloud platform project name')
@@ -328,11 +337,15 @@ def main():
     #OTHER
     parser.add_argument("--debug", default=True, type=ast.literal_eval)
     parser.add_argument("--hp_tuning", default=False, type=ast.literal_eval)
+    parser.add_argument("--new_checkpoint", default=False, type=ast.literal_eval, help="specify if you should use the checkpoint specified in current args for eval")
     args = parser.parse_args()
     
     print('Torch version: ',torch.__version__)
     print('Cuda availability: ', torch.cuda.is_available())
     print('Cuda version: ', torch.version.cuda)
+    if args.seed is not None:
+        torch.manual_seed(args.seed)
+        if torch.cuda.is_available(): torch.cuda.manual_seed_all(args.seed)
     
     if args.scheduler=="None":
         args.scheduler = None

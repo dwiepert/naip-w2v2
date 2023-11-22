@@ -154,11 +154,16 @@ def setup_mdl_args(args, model_path):
 
         #(3): if loading a finetuned model, that is args.finetuned_mdl_path = orig_path, make sure the pretrained model is available
         if args.finetuned_mdl_path == orig_path:
-            if model_args.bucket_name != args.bucket_name: #if the bucket is not the same as the current bucket, initialize the bucket for downloading
+        
+            if model_args.bucket_name != args.bucket_name and not args.new_checkpoint: #if the bucket is not the same as the current bucket, initialize the bucket for downloading
                 storage_client = storage.Client(project=model_args.project_name)
                 bucket = storage_client.bucket(model_args.bucket_name)
             else:
                 bucket = args.bucket
+
+            if args.new_checkpoint:
+                model_args.checkpoint = args.checkpoint
+                model_args.bucket_name = args.bucket_name
 
             model_args.checkpoint = gcs_model_exists(model_args.checkpoint, model_args.bucket_name, args.exp_dir, bucket, True)
             

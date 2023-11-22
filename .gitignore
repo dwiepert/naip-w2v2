@@ -1,0 +1,7 @@
+
+private_files/
+wav2vec2-base-960h/
+wav2vec2-large-960h/
+*.pyc
+.vscode/launch.json
+.DS_Store

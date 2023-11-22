@@ -14,6 +14,8 @@ import argparse
 import ast
 import itertools
 import subprocess
+import glob
+
 
 #### potential parameters - this can be heavily edited for other use cases/parameters
 lr = {
@@ -321,11 +323,11 @@ def make_path_1(config_dir, c, all_layers):
         w = 'nows'
 
     if all_layers:
-        l = 'all_layers'
+        l = 'alllayers'
     else:
-        l = 'subset_layers'
+        l = 'sublayers'
     
-    config_path = os.path.join(config_dir, f'config_{clf}_{sd}{c[2]}_{w}+{l}.json')
+    config_path = os.path.join(config_dir, f'config_{clf}_{sd}{c[2]}_{w}_{l}.json')
 
     return config_path
 
@@ -337,7 +339,7 @@ def generate_argdict(arg_list):
         arg_dict[a[0]]=a[1]
     return arg_dict
 
-def generate_alterdict(label, shared_dense, weighted, scheduler, cloud_dir):
+def generate_alterdict(label, shared_dense, sd_bottleneck, weighted, cloud_dir):
     """
     Generate a dictionary containing the values you'd like to alter. Can edit to include more options. 
     Assume that the input arg_list has the correct values for a single job (e.g., learning rate, layer, epochs, etc.), so this is for hptuning
@@ -346,7 +348,7 @@ def generate_alterdict(label, shared_dense, weighted, scheduler, cloud_dir):
     alter_dict["--label_txt"] = label
     alter_dict["--shared_dense"] = str(shared_dense)
     alter_dict["--weighted"] = str(weighted)
-    alter_dict["--scheduler"] = scheduler
+    alter_dict["--sd_bottleneck"] = str(sd_bottleneck)
     alter_dict["--cloud_dir"] = cloud_dir
 
     return alter_dict
@@ -356,17 +358,19 @@ def main():
     #Inputs
     parser.add_argument("--arg_txt", default="", help="txt file (separated by new lines) that contains all of the arguments for run.py" )
     parser.add_argument("--image", default="", help="specify image for the vertex AI job")
-    parser.add_argument("--tune_params", nargs="+", default=['--learning_rate','--weight_decay','--clf_bottleneck','--final_dropout','--layer'], help="list of parameters to tune, must include --") #108 combinations
-    parser.add_argument("--sd_bottlenecks", nargs="+", default=[300, 700, 768], type=int)
+    parser.add_argument("--tune_params", nargs="+", default=["--layer"], help="list of parameters to tune, must include --") #108 combinations
+    parser.add_argument("--sd_bottlenecks", nargs="+", default=[768], type=int)
     parser.add_argument("--shared_dense", type=ast.literal_eval, default=False, help="specify whether using shared_dense. If single job, uses this parameter. If hptuning job + True, makes configs for both False/True")
     parser.add_argument("--weighted", type=ast.literal_eval, default=False, help="specify whether using weighted sum. If single job, uses this parameter. If hptuning job + True, makes configs for both False/True")
-    parser.add_argument("--all_layers", type=ast.literal_eval, default=False, help="specify whether using all layers or just a subset of layers for a hp_tuning job with layers as a parameter")
-    parser.add_argument("--labels", default=[''])
+    parser.add_argument("--all_layers", type=ast.literal_eval, default=True, help="specify whether using all layers or just a subset of layers for a hp_tuning job with layers as a parameter")
+    parser.add_argument("-l","--labels", default=[''], nargs="+")
     parser.add_argument("--cloud_dir", default="")
     parser.add_argument("--config_dir", default='vertexai_support/configs')
-    parser.add_argument("--hp_tuning", default=False, type=ast.literal_eval(), help="specify if setting up a hyperparameter tuning job or running a single job")
+    parser.add_argument("--hp_tuning", default=False, type=ast.literal_eval, help="specify if setting up a hyperparameter tuning job or running a single job")
     parser.add_argument("--max_trial_count", default=108, type=int)
     parser.add_argument("--parallel_trial_count", default=3, type=int)
+    parser.add_argument("--make_configs", default=False, type=ast.literal_eval)
+    parser.add_argument("--run_configs", default=True, type=ast.literal_eval)
     args = parser.parse_args()
 
     #check if the directory to store configuration files exists
@@ -376,7 +380,6 @@ def main():
     with open(args.arg_txt) as f:
         arg_list = f.readlines()
     arg_list = [a.strip() for a in arg_list]
-
 
     if not args.hp_tuning:
         assert len(args.labels) == 1, 'If running a single job, only one label can be given'
@@ -390,32 +393,36 @@ def main():
         subprocess.run(cmd)
 
     else:
-        combos = config_combinations(args.labels, args.shared_dense, args.weighted, args.sd_bottleneck) #TODO:SCHEDULER COULD LATER BE ADDED HERE AS A COMBINATION, CURRENTLY NOT AN OPTION.
-        
-        config_list = []
-        for c in combos:
-            arg_dict = generate_argdict(arg_list)
-            alter_dict = generate_alterdict(c[0],c[1])
+        if args.make_configs:
+            combos = config_combinations(args.labels, args.shared_dense, args.weighted, args.sd_bottlenecks) #TODO:SCHEDULER COULD LATER BE ADDED HERE AS A COMBINATION, CURRENTLY NOT AN OPTION.
+            
+            config_list = []
+            for c in combos:
+                arg_dict = generate_argdict(arg_list)
+                alter_dict = generate_alterdict(args.labels[c[0]],c[1],c[2],c[3],args.cloud_dir)
 
-            config = setup_hptuningjob(arg_dict, alter_dict, args.tune_params, args.image, args.sd_bottlenecks, args.all_layers, args.weighted)
+                config = setup_hptuningjob(arg_dict, alter_dict, args.tune_params, args.image, c[2], args.all_layers, c[3])
 
-            config_path = make_path_1(args.config_dir, c, args.all_layers)
-            config_list.append(config_path)
+                config_path = make_path_1(args.config_dir, c, args.all_layers)
+                config_list.append(config_path)
 
-            if not os.path.exists(config_path):
-                obj= json.dumps(config)
-                with open(config_path, "w") as outfile:
-                    outfile.write(obj)
-        
-        for c in config_list:
-            cmd = ["gcloud", "ai", "hp-tuning-jobs", "create", 
-             "--region=us-central1", 
-             f"--display-name=w2v2layers_{os.path.basename(c)[7:-5]}", 
-             f"--config={c}",
-             f"--max-trial-count={args.max_trial_count}",
-             f"--parallel-trial-count={args.parallel_trial_count}"]
-            subprocess.run(cmd)
-            #note, if this fails, run gcloud auth login andgcloud config set project PROJECT NAME
+                if not os.path.exists(config_path):
+                    obj= json.dumps(config)
+                    with open(config_path, "w") as outfile:
+                        outfile.write(obj)
+        else:
+            config_list = glob.glob(os.path.join(args.config_dir,"*.json"))
+
+        if args.run_configs:
+            for c in config_list:
+                cmd = ["gcloud", "ai", "hp-tuning-jobs", "create", 
+                "--region=us-central1", 
+                f"--display-name=w2v2layers_{os.path.basename(c)[7:-5]}", 
+                f"--config={c}",
+                f"--max-trial-count={args.max_trial_count}",
+                f"--parallel-trial-count={args.parallel_trial_count}"]
+                subprocess.run(cmd)
+                #note, if this fails, run gcloud auth login andgcloud config set project PROJECT NAME
 
 
 if __name__ == "__main__":
