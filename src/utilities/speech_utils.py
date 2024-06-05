@@ -211,8 +211,11 @@ def load_waveform_local(input_dir, uid, extension = None, lib=False):
         metadata = json.load(f)
     
     if extension is None:
-        if metadata['encoding'] == 'MP3':
-            extension = 'mp3'
+        if 'encoding' in metadata:
+            if metadata['encoding'] == 'MP3':
+                extension = 'mp3'
+            else:
+                extension = 'wav'
         else:
             extension = 'wav'
         
@@ -267,7 +270,10 @@ class UidToWaveform(object):
         waveform, metadata = self.cache[uid]
         
         sample['waveform'] = waveform
-        sample['sample_rate'] = int(metadata['sample_rate_hz'])
+        if 'sample_rate_hz' in metadata:
+            sample['sample_rate'] = int(metadata['sample_rate_hz'])
+        else:
+            sample['sample_rate'] = int(metadata['sample_rate'])
          
         return sample
     

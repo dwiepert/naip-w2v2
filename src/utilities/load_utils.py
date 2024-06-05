@@ -211,15 +211,6 @@ def load_data(data_split_root, target_labels, exp_dir, cloud, cloud_dir, bucket,
         if cloud:
             upload(cloud_dir, val_path, bucket)
 
-    #alter data columns
-    if 'distortions' in target_labels:
-        if 'distortions' not in train_df.columns:
-            train_df["distortions"]=((train_df["distorted Cs"]+train_df["distorted V"])>0).astype(int)
-        if 'distortions' not in val_df.columns:
-            val_df["distortions"]=((val_df["distorted Cs"]+val_df["distorted V"])>0).astype(int)
-        if 'distortions' not in test_df.columns:
-            test_df["distortions"]=((test_df["distorted Cs"]+test_df["distorted V"])>0).astype(int)
-
     #remove NA
     train_df=train_df.dropna(subset=target_labels)
     val_df=val_df.dropna(subset=target_labels)

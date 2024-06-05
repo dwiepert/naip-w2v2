@@ -77,13 +77,6 @@ The following parameters are accepted (`--` indicates the command line argument 
 * `resample_rate`: an integer value for resampling. Set with `--resample_rate`
 * `reduce`: a boolean indicating whether to reduce audio to monochannel. Set with `--reduce`
 * `clip_length`: float specifying how many seconds the audio should be. Will work with the 'sample_rate' of the audio to get # of frames. Set with `--clip_length`
-* `tshift`: Time shifting parameter (between 0 and 1). Set with `--tshift`
-* `speed`: Speed tuning parameter (between 0 and 1). Set with `--speed`
-* `gauss_noise`: amount of gaussian noise to add (between 0 and 1). Set with `--gauss`
-* `pshift`: pitch shifting parameter (between 0 and 1). Set with `--pshift`
-* `pshiftn`: number of steps for pitch shifting. Set with `--pshiftn`
-* `gain`: gain parameter (between 0 and 1).Set with `--gain`
-* `stretch`: audio stretching parameter (between 0 and 1). Set with `--stretch`
 * `mixup`: parameter for file mixup (between 0 and 1). Set with `--mixup`
 
 ## Arguments

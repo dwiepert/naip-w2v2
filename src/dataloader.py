@@ -58,20 +58,12 @@ class W2V2Dataset(Dataset):
         self.resample_rate = self.audio_conf.get('resample_rate') #resample if resample rate != 0 and if resample rate != sample rate
         self.reduce = self.audio_conf.get('reduce') #reduce to monochannel if True
         self.clip_length = self.audio_conf.get('clip_length') #truncate clip to specified length if != 0
-        ### AUDIO TRANSFORM INFO - albumentation audio augmentations
-        self.tshift = self.audio_conf.get('tshift') #0.9
-        self.speed = self.audio_conf.get('speed') #0
-        self.gauss = self.audio_conf.get('gauss_noise') #0.8
-        self.pshift = self.audio_conf.get('pshift') #0
-        self.pshift_n = self.audio_conf.get('pshiftn') #0
-        self.gain = self.audio_conf.get('gain') #0.9
-        self.stretch =  self.audio_conf.get('stretch') #0
         #mixup
         self.mixup = self.audio_conf.get('mixup') #mixup if mixup != 0
   
         self.label_num = len(self.target_labels)
         
-        self.audio_transform, self.al_transform, self.feature_tfm = self._getaudiotransform() #get audio transforms
+        self.audio_transform, self.feature_tfm = self._getaudiotransform() #get audio transforms
         
     
     def _getaudiotransform(self):
@@ -100,39 +92,10 @@ class W2V2Dataset(Dataset):
         transform_list.append(tensor_tfm)
         transform = torchvision.transforms.Compose(transform_list)
         #transform_list.append(feature_tfm)
-        
-        #albumentations transforms
-        al_transform = []
-        if self.tshift != 0:
-            tshift = TimeShifting(p=self.tshift)
-            al_transform.append(tshift)
-        
-        if self.speed != 0:
-            speed = SpeedTuning(p=self.speed)
-            al_transform.append(speed)
-        
-        if self.gauss != 0:
-            gauss = AddGaussianNoise(p=self.gauss)
-            al_transform.append(gauss)
-        
-        if self.pshift != 0:
-            pshift = PitchShift(p=self.pshift, n_steps = self.pshiftn)
-            al_transform.append(pshift)
-
-        if self.gain != 0:
-            gain = Gain(p=self.gain)
-            al_transform.append(gain)
-
-        if self.stretch != 0:
-            stretch = StretchAudio(p=self.stretch)
-            al_transform.append(stretch)
-
-        if al_transform != []:
-            al_transform = albumentations.Compose(al_transform)
 
         feature_tfm = Wav2VecFeatureExtractor(self.checkpoint, self.clip_length)
 
-        return transform, al_transform, feature_tfm
+        return transform, feature_tfm
 
     def __getitem__(self, idx):
         '''
@@ -166,8 +129,6 @@ class W2V2Dataset(Dataset):
         }
         
         sample = self.audio_transform(sample) #load and perform standard transformation
-        if self.al_transform != []:
-            sample = self.al_transform(sample=sample)['sample'] #audio augmentations
         
         #TODO: initialize mixup
         mix = Mixup()
@@ -184,8 +145,6 @@ class W2V2Dataset(Dataset):
                 'targets': mix_targets
             }
             sample2 = self.audio_transform(sample2) #load and perform standard transformation
-            if self.al_transform != []:
-                sample2 = self.al_transform(sample=sample2)["sample"] #audio augmentations
 
             sample = mix(sample, sample2)
         

@@ -48,9 +48,6 @@ def get_embeddings(args):
     assert '.csv' in args.data_split_root, f'A csv file is necessary for embedding extraction. Please make sure this is a full file path: {args.data_split_root}'
     annotations_df = pd.read_csv(args.data_split_root, index_col = 'uid') #data_split_root should use the CURRENT arguments regardless of the finetuned model
 
-    if 'distortions' in args.target_labels and 'distortions' not in annotations_df.columns:
-        annotations_df["distortions"]=((annotations_df["distorted Cs"]+annotations_df["distorted V"])>0).astype(int)
-
     if args.debug:
         annotations_df = annotations_df.iloc[0:8,:]
 
@@ -310,13 +307,6 @@ def main():
     parser.add_argument("--resample_rate", default=16000,type=int, help='resample rate for audio files')
     parser.add_argument("--reduce", default=True, type=ast.literal_eval, help="Specify whether to reduce to monochannel")
     parser.add_argument("--clip_length", default=10.0, type=float, help="If truncating audio, specify clip length in seconds. 0 = no truncation")
-    parser.add_argument("--tshift", default=0, type=float, help="Specify p for time shift transformation")
-    parser.add_argument("--speed", default=0, type=float, help="Specify p for speed tuning")
-    parser.add_argument("--gauss", default=0, type=float, help="Specify p for adding gaussian noise")
-    parser.add_argument("--pshift", default=0, type=float, help="Specify p for pitch shifting")
-    parser.add_argument("--pshiftn", default=0, type=float, help="Specify number of steps for pitch shifting")
-    parser.add_argument("--gain", default=0, type=float, help="Specify p for gain")
-    parser.add_argument("--stretch", default=0, type=float, help="Specify p for audio stretching")
     parser.add_argument("--mixup", type=float, default=0, help="how many (0-1) samples need to be mixup during training")
     #Model parameters
     parser.add_argument("-pm", "--pooling_mode", default="mean", help="specify method of pooling last hidden layer", choices=['mean','sum','max'])
@@ -339,7 +329,7 @@ def main():
     parser.add_argument("--hp_tuning", default=False, type=ast.literal_eval)
     parser.add_argument("--new_checkpoint", default=False, type=ast.literal_eval, help="specify if you should use the checkpoint specified in current args for eval")
     args = parser.parse_args()
-    
+
     print('Torch version: ',torch.__version__)
     print('Cuda availability: ', torch.cuda.is_available())
     print('Cuda version: ', torch.version.cuda)
